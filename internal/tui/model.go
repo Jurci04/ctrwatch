@@ -93,8 +93,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter", " ":
 			m.focused = !m.focused
+			return m, tea.ClearScreen
 		case "a":
 			m.focused = false
+			return m, tea.ClearScreen
 		}
 
 	case tea.WindowSizeMsg:
@@ -132,16 +134,13 @@ func (m *Model) View() string {
 	n := len(containers)
 	panelRows := max(m.height-1, 1)
 	bodyRows := max(panelRows/n-2, 0)
-	extraRows := max(panelRows-n*(bodyRows+2), 0)
-	innerW := max(m.width-3, 1)
+	panelW := max(m.width-2, 1)
+	innerW := max(panelW-2, 1)
 
 	var panels []string
 
 	for i, name := range containers {
 		contentHeight := bodyRows
-		if i < extraRows {
-			contentHeight++
-		}
 		logSlots := contentHeight
 		color := panelColors[i%len(panelColors)]
 		selected := name == m.containers[m.selected]
@@ -170,20 +169,9 @@ func (m *Model) View() string {
 				lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("8")).Render("waiting..."))
 			body = append(body, vl+w+vl)
 		} else {
-			start := 0
-			if len(buf) > logSlots {
-				start = len(buf) - logSlots
-			}
-			for _, ll := range buf[start:] {
-				txt := cleanLine(ll.Text)
-				if txt == "" {
-					continue
-				}
-				txt = truncate(txt, innerW)
-				if ll.Stream == 2 {
-					txt = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(txt)
-				}
-				txt = lipgloss.NewStyle().Width(innerW).Render(txt)
+			lines := visibleLogLines(buf, logSlots, innerW)
+			for _, line := range lines {
+				txt := lipgloss.NewStyle().Width(innerW).Render(colorLogLine(line))
 				body = append(body, vl+txt+vl)
 			}
 		}
@@ -207,9 +195,9 @@ func (m *Model) View() string {
 	footer := fmt.Sprintf("%d/%d  tab switch  enter focus  a all  q quit", m.selected+1, len(m.containers))
 	out := strings.Join(panels, "\n") + "\n" + lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")).
-		Width(m.width).
-		Render(truncate(footer, m.width))
-	return fitHeight(out, m.width, m.height)
+		Width(panelW).
+		Render(truncate(footer, panelW))
+	return fitHeight(out, panelW, m.height)
 }
 
 func truncate(s string, width int) string {
@@ -237,8 +225,89 @@ func takeWidth(s string, width int) string {
 }
 
 func cleanLine(s string) string {
-	s = strings.ReplaceAll(s, "\r", "")
-	return strings.ReplaceAll(s, "\t", "    ")
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\x1b' {
+			i = skipANSI(s, i)
+			continue
+		}
+		switch c {
+		case '\r', '\n':
+			continue
+		case '\t':
+			b.WriteString("    ")
+		default:
+			if c >= 0x20 {
+				b.WriteByte(c)
+			}
+		}
+	}
+	return b.String()
+}
+
+type visibleLogLine struct {
+	text   string
+	stderr bool
+}
+
+func colorLogLine(line visibleLogLine) string {
+	color, ok := logLineColor(line)
+	if !ok {
+		return line.text
+	}
+	return lipgloss.NewStyle().Foreground(color).Render(line.text)
+}
+
+func logLineColor(line visibleLogLine) (lipgloss.Color, bool) {
+	if line.stderr {
+		return lipgloss.Color("9"), true
+	}
+	text := strings.ToUpper(line.text)
+	switch {
+	case strings.Contains(text, "ERROR") || strings.Contains(text, "CRITICAL"):
+		return lipgloss.Color("9"), true
+	case strings.Contains(text, "WARNING") || strings.Contains(text, "WARN"):
+		return lipgloss.Color("11"), true
+	case strings.Contains(text, "INFO"):
+		return lipgloss.Color("10"), true
+	case strings.Contains(text, "DEBUG"):
+		return lipgloss.Color("12"), true
+	default:
+		return "", false
+	}
+}
+
+func visibleLogLines(buf []runtime.LogLine, limit, width int) []visibleLogLine {
+	if limit <= 0 {
+		return nil
+	}
+	lines := make([]visibleLogLine, 0, limit)
+	for i := len(buf) - 1; i >= 0 && len(lines) < limit; i-- {
+		txt := truncate(cleanLine(buf[i].Text), width)
+		if txt == "" {
+			continue
+		}
+		lines = append(lines, visibleLogLine{text: txt, stderr: buf[i].Stream == 2})
+	}
+	for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+		lines[i], lines[j] = lines[j], lines[i]
+	}
+	return lines
+}
+
+func skipANSI(s string, i int) int {
+	if i+1 >= len(s) || s[i+1] != '[' {
+		return i
+	}
+	i += 2
+	for i < len(s) {
+		if s[i] >= '@' && s[i] <= '~' {
+			return i
+		}
+		i++
+	}
+	return len(s) - 1
 }
 
 func fitHeight(s string, width, height int) string {

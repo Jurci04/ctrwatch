@@ -89,6 +89,7 @@ func MergeServer(cfg *Config, server Server) {
 			host = "localhost"
 		}
 		if host == server.Host && s.Socket == server.Socket && slices.Equal(s.Tags, server.Tags) {
+			cfg.Servers[i].Host = server.Host
 			cfg.Servers[i].Containers = server.Containers
 			return
 		}

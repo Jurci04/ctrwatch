@@ -9,35 +9,7 @@ import (
 	"ctrwatch/internal/config"
 )
 
-func TestComposeContainers(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "compose.yaml")
-	if err := os.WriteFile(path, []byte(`
-name: shop
-services:
-  api:
-    container_name: api-custom
-  db:
-    image: postgres
-`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := composeContainers(path, b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	slices.Sort(got)
-	want := []string{"api-custom", "shop-db-1"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("containers = %v, want %v", got, want)
-	}
-}
-
-func TestImportContainersSupportsPodmanFiles(t *testing.T) {
+func TestImportContainers(t *testing.T) {
 	dir := t.TempDir()
 	kubePath := filepath.Join(dir, "pod.yaml")
 	if err := os.WriteFile(kubePath, []byte(`
@@ -51,11 +23,20 @@ spec:
 		t.Fatal(err)
 	}
 	cases := map[string][]byte{
+		"compose.yaml": []byte(`
+name: shop
+services:
+  api:
+    container_name: api-custom
+  db:
+    image: postgres
+`),
 		"api.container": []byte("ContainerName=api\nImage=example/api\n"),
 		"api.kube":      []byte("Yaml=pod.yaml\n"),
 	}
 
 	want := map[string][]string{
+		"compose.yaml":  {"api-custom", "shop-db-1"},
 		"api.container": {"api"},
 		"api.kube":      {"web", "worker"},
 	}
@@ -70,8 +51,41 @@ spec:
 			if err != nil {
 				t.Fatal(err)
 			}
+			slices.Sort(got)
 			if !slices.Equal(got, want[name]) {
 				t.Fatalf("containers = %v, want %v", got, want[name])
+			}
+		})
+	}
+}
+
+func TestResolveImportPathPrefersComposeFiles(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+	}{
+		{name: "compose yaml", file: "compose.yaml"},
+		{name: "compose yml", file: "compose.yml"},
+		{name: "docker compose yaml", file: "docker-compose.yaml"},
+		{name: "docker compose yml", file: "docker-compose.yml"},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			for _, later := range tests[i:] {
+				if err := os.WriteFile(later.file, []byte("services: {}"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got, err := resolveImportPath("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.file {
+				t.Fatalf("path = %q, want %q", got, tt.file)
 			}
 		})
 	}
