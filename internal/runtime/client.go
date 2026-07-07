@@ -35,19 +35,15 @@ func detectSocket() string {
 }
 
 func clientForAddr(addr string) *Client {
-	var dial func(ctx context.Context, network, addr string) (net.Conn, error)
-	if strings.HasPrefix(addr, "unix://") {
-		sock := strings.TrimPrefix(addr, "unix://")
-		dial = func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", sock)
-		}
-	} else {
-		dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, network, addr)
-		}
-	}
+	sock := strings.TrimPrefix(addr, "unix://")
 	return &Client{
-		httpClient: &http.Client{Transport: &http.Transport{DialContext: dial}},
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+				},
+			},
+		},
 		SocketPath: addr,
 	}
 }
@@ -60,5 +56,8 @@ func NewClient() *Client {
 
 // NewClientForSocket creates a Client connected to the given Unix socket path.
 func NewClientForSocket(socketPath string) *Client {
+	if strings.HasPrefix(socketPath, "unix://") {
+		return clientForAddr(socketPath)
+	}
 	return clientForAddr("unix://" + socketPath)
 }

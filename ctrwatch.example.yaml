@@ -1,6 +1,7 @@
 servers:
   # local Docker/Podman socket (auto-detected)
-  - containers:
+  - host: localhost
+    containers:
       - nginx
       - redis
     tags: [dev]

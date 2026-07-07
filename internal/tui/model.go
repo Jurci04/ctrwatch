@@ -1,11 +1,11 @@
-// Package tui implements a Bubble Tea TUI for monitoring container logs
-// and stats in a split-screen layout.
 package tui
 
 import (
-	"ctrwatch/internal/runtime"
 	"fmt"
+	"maps"
 	"strings"
+
+	"ctrwatch/internal/runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -20,54 +20,50 @@ var panelColors = []lipgloss.Color{
 	lipgloss.Color("13"),
 }
 
-type logLineMsg runtime.LogLine
+type logBatchMsg []runtime.LogLine
 
 type statsMsg struct {
 	Stats map[string]*runtime.ContainerStats
 }
 
-// Model is the Bubble Tea model for the TUI.
 type Model struct {
 	containers []string
 	lines      map[string][]runtime.LogLine
 	stats      map[string]*runtime.ContainerStats
-	linesCh    chan runtime.LogLine
+	linesCh    chan []runtime.LogLine
 	statsCh    chan map[string]*runtime.ContainerStats
 	width      int
 	height     int
+	selected   int
+	focused    bool
 }
 
-// NewModel creates a new TUI model for the given container names.
 func NewModel(containers []string) *Model {
 	return &Model{
 		containers: containers,
 		lines:      make(map[string][]runtime.LogLine),
 		stats:      make(map[string]*runtime.ContainerStats),
-		linesCh:    make(chan runtime.LogLine, 256),
+		linesCh:    make(chan []runtime.LogLine, 64),
 		statsCh:    make(chan map[string]*runtime.ContainerStats, 4),
 		width:      80,
 		height:     24,
 	}
 }
 
-// LinesCh returns the send-only channel for incoming log lines.
-func (m *Model) LinesCh() chan<- runtime.LogLine { return m.linesCh }
-
-// StatsCh returns the send-only channel for incoming stats snapshots.
+func (m *Model) LinesCh() chan<- []runtime.LogLine                  { return m.linesCh }
 func (m *Model) StatsCh() chan<- map[string]*runtime.ContainerStats { return m.statsCh }
 
-// Init starts the channel listeners.
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(listenLogs(m.linesCh), listenStats(m.statsCh))
 }
 
-func listenLogs(ch <-chan runtime.LogLine) tea.Cmd {
+func listenLogs(ch <-chan []runtime.LogLine) tea.Cmd {
 	return func() tea.Msg {
-		line, ok := <-ch
+		batch, ok := <-ch
 		if !ok {
 			return nil
 		}
-		return logLineMsg(line)
+		return logBatchMsg(batch)
 	}
 }
 
@@ -81,121 +77,180 @@ func listenStats(ch <-chan map[string]*runtime.ContainerStats) tea.Cmd {
 	}
 }
 
-// Update handles Bubble Tea messages.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
+		case "tab", "right", "down":
+			if len(m.containers) > 0 {
+				m.selected = (m.selected + 1) % len(m.containers)
+			}
+		case "shift+tab", "left", "up":
+			if len(m.containers) > 0 {
+				m.selected = (m.selected + len(m.containers) - 1) % len(m.containers)
+			}
+		case "enter", " ":
+			m.focused = !m.focused
+		case "a":
+			m.focused = false
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 
-	case logLineMsg:
-		ll := runtime.LogLine(msg)
-		buf := m.lines[ll.Container]
-		buf = append(buf, ll)
-		if len(buf) > maxLines {
-			buf = buf[len(buf)-maxLines:]
+	case logBatchMsg:
+		for _, ll := range []runtime.LogLine(msg) {
+			buf := m.lines[ll.Container]
+			buf = append(buf, ll)
+			if len(buf) > maxLines {
+				buf = buf[len(buf)-maxLines:]
+			}
+			m.lines[ll.Container] = buf
 		}
-		m.lines[ll.Container] = buf
 		return m, listenLogs(m.linesCh)
 
 	case statsMsg:
-		for name, s := range msg.Stats {
-			m.stats[name] = s
-		}
+		maps.Copy(m.stats, msg.Stats)
 		return m, listenStats(m.statsCh)
 	}
 
 	return m, nil
 }
 
-// View renders the split-screen layout.
 func (m *Model) View() string {
 	if len(m.containers) == 0 {
 		return "no containers"
 	}
 
-	n := len(m.containers)
-	colWidth := m.width / n
+	containers := m.containers
+	if m.focused {
+		containers = []string{m.containers[m.selected]}
+	}
+	n := len(containers)
+	panelRows := max(m.height-1, 1)
+	bodyRows := max(panelRows/n-2, 0)
+	extraRows := max(panelRows-n*(bodyRows+2), 0)
+	innerW := max(m.width-3, 1)
 
-	var cols []string
-	for i, name := range m.containers {
+	var panels []string
+
+	for i, name := range containers {
+		contentHeight := bodyRows
+		if i < extraRows {
+			contentHeight++
+		}
+		logSlots := contentHeight
 		color := panelColors[i%len(panelColors)]
-		buf := m.lines[name]
+		selected := name == m.containers[m.selected]
+		bStyle := lipgloss.NewStyle().Foreground(color).Bold(selected)
+		vl := bStyle.Render("│")
 
-		title := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(color).
-			Render(name)
-
-		statLine := ""
-		statusBadge := ""
+		title := " " + name
 		if s, ok := m.stats[name]; ok {
 			memMB := float64(s.MemoryUsage) / 1024 / 1024
-			statLine = fmt.Sprintf("CPU: %.1f%%  MEM: %.0fMB", s.CPUPercent, memMB)
-			statusColor := lipgloss.Color("10")
-			if s.Status != "running" {
-				statusColor = lipgloss.Color("11")
+			status := s.Status
+			if status == "" {
+				status = "unknown"
 			}
-			statusBadge = lipgloss.NewStyle().
-				Foreground(statusColor).
-				Render(s.Status)
+			title += fmt.Sprintf(" | %s | CPU %.1f%% | MEM %.0fMB", status, s.CPUPercent, memMB)
 		}
+		title = truncate(title+" ", max(innerW-2, 1))
+		dashes := max(0, innerW-1-lipgloss.Width(title))
+		topBorder := bStyle.Render("╭" + "─" + title + strings.Repeat("─", dashes) + "╮")
 
-		headerText := title
-		if statusBadge != "" {
-			headerText += " " + statusBadge
-		}
-		if statLine != "" {
-			headerText += "\n" + statLine
-		}
+		var body []string
 
-		header := lipgloss.NewStyle().
-			Width(colWidth).
-			Align(lipgloss.Center).
-			Render(headerText)
-
-		border := lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(color).
-			Width(colWidth)
-
-		header = border.Render(header)
-
-		borderHeight := 2
-		headerLines := 1
-		if statLine != "" {
-			headerLines = 2
-		}
-		bodyHeight := m.height - borderHeight - headerLines - 1
-		start := 0
-		if len(buf) > bodyHeight {
-			start = len(buf) - bodyHeight
-		}
-
-		stderrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-		var bodyLines []string
-		for _, l := range buf[start:] {
-			truncated := l.Text
-			if len(truncated) > colWidth-4 {
-				truncated = truncated[:colWidth-4]
+		// Log lines
+		buf := m.lines[name]
+		if len(buf) == 0 && len(m.stats) == 0 {
+			w := lipgloss.NewStyle().Width(innerW).Render(
+				lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("8")).Render("waiting..."))
+			body = append(body, vl+w+vl)
+		} else {
+			start := 0
+			if len(buf) > logSlots {
+				start = len(buf) - logSlots
 			}
-			line := truncated
-			if l.Stream == 2 {
-				line = stderrStyle.Render(truncated)
+			for _, ll := range buf[start:] {
+				txt := cleanLine(ll.Text)
+				if txt == "" {
+					continue
+				}
+				txt = truncate(txt, innerW)
+				if ll.Stream == 2 {
+					txt = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(txt)
+				}
+				txt = lipgloss.NewStyle().Width(innerW).Render(txt)
+				body = append(body, vl+txt+vl)
 			}
-			bodyLines = append(bodyLines, line)
 		}
-		body := strings.Join(bodyLines, "\n")
 
-		col := lipgloss.JoinVertical(lipgloss.Top, header, body)
-		cols = append(cols, col)
+		// Pad/truncate body to exact contentHeight
+		for len(body) < contentHeight {
+			body = append(body, vl+strings.Repeat(" ", innerW)+vl)
+		}
+		if len(body) > contentHeight {
+			body = body[:contentHeight]
+		}
+
+		// Bottom border
+		bottomBorder := bStyle.Render("╰" + strings.Repeat("─", innerW) + "╯")
+
+		panelLines := append([]string{topBorder}, body...)
+		panelLines = append(panelLines, bottomBorder)
+		panels = append(panels, strings.Join(panelLines, "\n"))
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, cols...)
+	footer := fmt.Sprintf("%d/%d  tab switch  enter focus  a all  q quit", m.selected+1, len(m.containers))
+	out := strings.Join(panels, "\n") + "\n" + lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Width(m.width).
+		Render(truncate(footer, m.width))
+	return fitHeight(out, m.width, m.height)
+}
+
+func truncate(s string, width int) string {
+	if width <= 0 || lipgloss.Width(s) <= width {
+		return s
+	}
+	if width <= 3 {
+		return takeWidth(s, width)
+	}
+	return takeWidth(s, width-3) + "..."
+}
+
+func takeWidth(s string, width int) string {
+	var b strings.Builder
+	used := 0
+	for _, r := range s {
+		w := lipgloss.Width(string(r))
+		if used+w > width {
+			break
+		}
+		b.WriteRune(r)
+		used += w
+	}
+	return b.String()
+}
+
+func cleanLine(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	return strings.ReplaceAll(s, "\t", "    ")
+}
+
+func fitHeight(s string, width, height int) string {
+	if height <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, strings.Repeat(" ", max(width, 0)))
+	}
+	return strings.Join(lines, "\n")
 }

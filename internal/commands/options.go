@@ -1,10 +1,7 @@
 package commands
 
 import (
-	"fmt"
-	"strconv"
 	"strings"
-	"time"
 
 	"ctrwatch/internal/runtime"
 )
@@ -14,19 +11,6 @@ import (
 type containerDef struct {
 	Name   string
 	Client *runtime.Client
-}
-
-// parseDurationSince converts a human-readable duration (e.g. "10m", "1h")
-// to a Unix timestamp string suitable for the container API.
-func parseDurationSince(since string) (string, error) {
-	if since == "" {
-		return "", nil
-	}
-	d, err := time.ParseDuration(since)
-	if err != nil {
-		return "", fmt.Errorf("invalid --since duration %q: %w", since, err)
-	}
-	return strconv.FormatInt(time.Now().Add(-d).Unix(), 10), nil
 }
 
 // parseContainers parses container arguments that may include an optional

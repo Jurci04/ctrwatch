@@ -28,7 +28,7 @@ func RunInspect(args []string) error {
 	}
 
 	fmt.Printf("Name:      %s\n", strings.TrimPrefix(info.Name, "/"))
-	fmt.Printf("ID:        %s\n", info.ID[:12])
+	fmt.Printf("ID:        %s\n", shortID(info.ID))
 	fmt.Printf("Image:     %s\n", info.Config.Image)
 	fmt.Printf("Status:    %s\n", info.State.Status)
 	fmt.Printf("Created:   %s\n", info.Created.Format(time.RFC1123))

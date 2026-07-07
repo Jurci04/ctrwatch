@@ -40,8 +40,13 @@ type memoryStats struct {
 
 // StatsContainer fetches a one-shot CPU and memory snapshot for a container.
 func (client *Client) StatsContainer(ctx context.Context, containerID string) (*ContainerStats, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("http://localhost/containers/%s/stats?stream=false", containerID), nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		fmt.Sprintf("http://localhost/containers/%s/stats?stream=false", containerID),
+		nil,
+	)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

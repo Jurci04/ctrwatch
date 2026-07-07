@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"ctrwatch/internal/format"
+	"ctrwatch/internal/config"
 	"ctrwatch/internal/runtime"
+	"ctrwatch/internal/ssh"
 )
 
 // RunPS lists containers in a formatted table.
@@ -20,13 +21,13 @@ func RunPS(args []string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	rest := fs.Args()
 	if len(rest) >= 1 && strings.HasPrefix(rest[0], "@") {
-		return psFromConfig(ctx, rest[0][1:], *all)
+		return psFromConfig(rest[0][1:], *all)
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	client := runtime.NewClient()
 	containers, err := client.ListContainers(ctx, *all)
@@ -35,27 +36,50 @@ func RunPS(args []string) error {
 		return err
 	}
 
-	format.PrintContainers(containers, client.SocketPath)
+	PrintContainers(containers, client.SocketPath)
 	return nil
 }
 
-func psFromConfig(ctx context.Context, tag string, all bool) error {
-	cfg, err := loadConfig(configPath())
-	if err != nil {
-		return err
-	}
-
-	var matched []Server
-	for _, s := range cfg.Servers {
-		for _, t := range s.Tags {
-			if t == tag {
-				matched = append(matched, s)
-				break
-			}
+func formatPorts(ports []runtime.Port) string {
+	parts := make([]string, 0, len(ports))
+	for _, p := range ports {
+		if p.PublicPort != 0 {
+			parts = append(parts, fmt.Sprintf("%s:%d->%d/%s", p.IP, p.PublicPort, p.PrivatePort, p.Type))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d/%s", p.PrivatePort, p.Type))
 		}
 	}
-	if len(matched) == 0 {
-		return fmt.Errorf("no servers with tag %q in %s", tag, configPath())
+	return strings.Join(parts, ", ")
+}
+
+func containerName(names []string) string {
+	if len(names) == 0 {
+		return "-"
+	}
+	return strings.TrimPrefix(names[0], "/")
+}
+
+// PrintContainers prints a formatted table of containers to stdout.
+func PrintContainers(containers []runtime.Container, socketPath string) {
+	fmt.Printf("# socket: %s\n", socketPath)
+	fmt.Printf("%-20s %-20s %-30s %-12s %-20s %v\n", "ID", "NAME", "IMAGE", "STATE", "STATUS", "PORTS")
+	for _, container := range containers {
+		fmt.Printf(
+			"%-20s %-20s %-30s %-12s %-20s %v\n",
+			shortID(container.ID),
+			containerName(container.Names),
+			container.Image,
+			container.State,
+			container.Status,
+			formatPorts(container.Ports),
+		)
+	}
+}
+
+func psFromConfig(tag string, all bool) error {
+	matched, err := resolveTaggedServers(tag)
+	if err != nil {
+		return err
 	}
 
 	var cleanups []func()
@@ -67,27 +91,55 @@ func psFromConfig(ctx context.Context, tag string, all bool) error {
 
 	for _, s := range matched {
 		label := s.Host
-		if label == "" {
-			label = "local"
+		if config.IsLocalHost(label) {
+			label = "localhost"
 		}
 
 		var client *runtime.Client
-		if s.Host == "" {
+		if config.IsLocalHost(s.Host) {
 			client = runtime.NewClient()
 		} else {
-			localSock, cleanup, err := sshTunnel(s.Host, s.Socket)
+			localSock, cleanup, err := ssh.Tunnel(s.Host, s.Socket)
 			if err != nil {
 				return err
 			}
 			cleanups = append(cleanups, cleanup)
-			client = runtime.NewClientForSocket("unix://" + localSock)
+			client = runtime.NewClientForSocket(localSock)
 		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
 		containers, err := client.ListContainers(ctx, all)
 		if err != nil {
 			return fmt.Errorf("%s: %w", label, err)
 		}
-		format.PrintContainers(containers, client.SocketPath)
+		PrintContainers(filterContainers(containers, s.Containers), client.SocketPath)
 	}
 	return nil
+}
+
+func filterContainers(containers []runtime.Container, names []string) []runtime.Container {
+	wanted := make(map[string]bool, len(names))
+	for _, name := range names {
+		wanted[name] = true
+	}
+
+	filtered := containers[:0]
+	for _, c := range containers {
+		for _, name := range c.Names {
+			if wanted[strings.TrimPrefix(name, "/")] {
+				filtered = append(filtered, c)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+func shortID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }

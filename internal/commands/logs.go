@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"ctrwatch/internal/runtime"
 )
@@ -30,9 +32,13 @@ func RunLogs(args []string) error {
 		return fmt.Errorf("usage: ctrwatch logs [--tail N] [--since DURATION] <container> [container...]")
 	}
 
-	sinceUnix, err := parseDurationSince(*since)
-	if err != nil {
-		return err
+	sinceUnix := ""
+	if *since != "" {
+		d, err := time.ParseDuration(*since)
+		if err != nil {
+			return fmt.Errorf("invalid --since duration %q: %w", *since, err)
+		}
+		sinceUnix = strconv.FormatInt(time.Now().Add(-d).Unix(), 10)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -46,12 +52,9 @@ func RunLogs(args []string) error {
 	var wg sync.WaitGroup
 
 	for _, c := range containers {
-		c := c
 		lines, errs := c.Client.StreamLogs(ctx, c.Name, opts)
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			for line := range lines {
 				select {
@@ -67,7 +70,7 @@ func RunLogs(args []string) error {
 				case <-ctx.Done():
 				}
 			}
-		}()
+		})
 	}
 
 	go func() {

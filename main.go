@@ -16,8 +16,11 @@ func printUsage() {
 	fmt.Println("  watch [--tail N] [--since D] <container>... | @tag")
 	fmt.Println("  inspect <container> | @tag  Show container details")
 	fmt.Println("  stats <container>... | @tag  Show CPU/memory stats")
+	fmt.Println("  import [--tag TAG] [file]    Import Compose/Podman container names")
+	fmt.Println("  import --from-running        Import running local containers")
+	fmt.Println("  config check                 Validate config")
 	fmt.Println()
-	fmt.Println("Use @tag to select containers from ctrwatch.yaml (or $CTRWATCH_CONFIG).")
+	fmt.Println("Use @tag to select containers from ctrwatch.yaml/settings.yaml (or $CTRWATCH_CONFIG).")
 }
 
 func main() {
@@ -39,6 +42,10 @@ func main() {
 		err = commands.RunInspect(os.Args[2:])
 	case "stats":
 		err = commands.RunStats(os.Args[2:])
+	case "import":
+		err = commands.RunImport(os.Args[2:])
+	case "config":
+		err = commands.RunConfig(os.Args[2:])
 	case "help":
 		printUsage()
 		os.Exit(0)

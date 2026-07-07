@@ -35,6 +35,7 @@ dist/
 
 # local build output
 bin/
+ctrwatch
 
 # Editor/IDE
 # .idea/

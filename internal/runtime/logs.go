@@ -113,9 +113,16 @@ func scanLogFrames(reader io.Reader, container string, logChan chan<- LogLine) e
 		if _, err := io.ReadFull(reader, buf); err != nil {
 			return err
 		}
+		text := string(buf)
+		// tqdm outputs \r-separated progress in a single frame;
+		// keep only the last segment to avoid overwriting the border.
+		if idx := strings.LastIndexByte(text, '\r'); idx >= 0 {
+			text = text[idx+1:]
+		}
+		text = strings.ReplaceAll(text, "\n", "")
 		logChan <- LogLine{
 			Container: container,
-			Text:      strings.TrimRight(string(buf), "\n\r"),
+			Text:      text,
 			Stream:    header[0],
 		}
 	}

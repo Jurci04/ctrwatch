@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -19,10 +20,12 @@ import (
 // pollStats periodically fetches CPU/memory stats for all containers
 // and sends them to the TUI model's stats channel.
 func pollStats(ctx context.Context, containers []containerDef, model *tui.Model) {
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	fetch := func() {
+	statuses := make(map[string]string, len(containers))
+
+	fetch := func(getStatus bool) {
 		stats := make(map[string]*runtime.ContainerStats, len(containers))
 		for _, c := range containers {
 			s, err := c.Client.StatsContainer(ctx, c.Name)
@@ -30,10 +33,13 @@ func pollStats(ctx context.Context, containers []containerDef, model *tui.Model)
 				stats[c.Name] = &runtime.ContainerStats{Status: fmt.Sprintf("error: %v", err)}
 				continue
 			}
-			info, err := c.Client.InspectContainer(ctx, c.Name)
-			if err == nil {
-				s.Status = info.State.Status
+			if getStatus {
+				info, err := c.Client.InspectContainer(ctx, c.Name)
+				if err == nil {
+					statuses[c.Name] = info.State.Status
+				}
 			}
+			s.Status = statuses[c.Name]
 			stats[c.Name] = s
 		}
 		if len(stats) > 0 {
@@ -41,11 +47,11 @@ func pollStats(ctx context.Context, containers []containerDef, model *tui.Model)
 		}
 	}
 
-	fetch()
+	fetch(true)
 	for {
 		select {
 		case <-ticker.C:
-			fetch()
+			fetch(false)
 		case <-ctx.Done():
 			return
 		}
@@ -73,9 +79,13 @@ func RunWatch(args []string) error {
 		return fmt.Errorf("watch supports max 4 containers")
 	}
 
-	sinceUnix, err := parseDurationSince(*since)
-	if err != nil {
-		return err
+	sinceUnix := ""
+	if *since != "" {
+		d, err := time.ParseDuration(*since)
+		if err != nil {
+			return fmt.Errorf("invalid --since duration %q: %w", *since, err)
+		}
+		sinceUnix = strconv.FormatInt(time.Now().Add(-d).Unix(), 10)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -94,16 +104,37 @@ func RunWatch(args []string) error {
 		c := c
 		lines, errs := c.Client.StreamLogs(ctx, c.Name, opts)
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for line := range lines {
-				model.LinesCh() <- line
+		wg.Go(func() {
+
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+			var batch []runtime.LogLine
+
+			for {
+				select {
+				case line, ok := <-lines:
+					if !ok {
+						if len(batch) > 0 {
+							model.LinesCh() <- batch
+						}
+						goto done
+					}
+					batch = append(batch, line)
+				case <-ticker.C:
+					if len(batch) > 0 {
+						model.LinesCh() <- batch
+						batch = nil
+					}
+				}
 			}
+
+		done:
 			if err := readStreamError(errs); err != nil {
-				model.LinesCh() <- runtime.LogLine{Container: c.Name, Text: fmt.Sprintf("error: %v", err)}
+				model.LinesCh() <- []runtime.LogLine{
+					{Container: c.Name, Text: fmt.Sprintf("error: %v", err)},
+				}
 			}
-		}()
+		})
 	}
 
 	statsCtx, statsStop := context.WithCancel(context.Background())
