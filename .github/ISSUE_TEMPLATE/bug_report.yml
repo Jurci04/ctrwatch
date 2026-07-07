@@ -1,0 +1,44 @@
+name: Bug report
+description: Report something that is broken or surprising.
+title: "fix: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: What did you run?
+      placeholder: ctrwatch watch @dev
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Docker, Podman, or another Docker-compatible runtime.
+      placeholder: Podman 5.x
+  - type: input
+    id: socket
+    attributes:
+      label: Socket or host
+      placeholder: /run/user/1000/podman/podman.sock
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Add any relevant output.

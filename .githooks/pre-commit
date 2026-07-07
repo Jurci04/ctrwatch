@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+echo "==> gofmt"
+files="$(gofmt -l .)"
+if [ -n "$files" ]; then
+  echo "$files"
+  echo "run: gofmt -w <files>"
+  exit 1
+fi
+
+echo "==> go mod tidy"
+go mod tidy -diff
+
+echo "==> go vet"
+go vet ./...
+
+echo "==> go test"
+go test ./...

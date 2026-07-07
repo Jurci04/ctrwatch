@@ -1,33 +1,78 @@
 # ctrwatch
 
-Small Go CLI/TUI for watching local containers through the Docker API (compatible with Podman, Docker, and any Docker API runtime).
+`ctrwatch` is a small Go CLI/TUI for watching containers.
+It works with Docker, Podman, and other Docker-compatible runtime sockets.
 
-## Features
+Use it for quick container lists, streaming logs, split-screen log watching,
+metadata inspection, one-shot stats, and tagged groups of local or remote
+containers.
 
-- List running containers (`ps`)
-- Stream logs from one or more containers with `--tail` and `--since` (`logs`)
-- Split-screen TUI log view with live CPU/memory stats (`watch`)
-- Container metadata inspection (`inspect`)
-- One-shot CPU/memory stats (`stats`)
-- Import local container groups from Compose, Podman Quadlet, or running containers (`import`)
-- Tagged local/remote container groups from `ctrwatch.yaml`, `settings.yaml`, or `$CTRWATCH_CONFIG`
+## Install
 
-## Usage
+Install the latest Linux release:
+
+```bash
+curl -sfL https://raw.githubusercontent.com/jurci/ctrwatch/main/install.sh | sh
+```
+
+Or download a binary from
+[GitHub Releases](https://github.com/jurci/ctrwatch/releases/latest) and place
+it in your `PATH`.
+
+Build from source:
+
+```bash
+go build -o bin/ctrwatch .
+```
+
+## Requirements
+
+- Linux
+- Docker, Podman, or another Docker-compatible runtime socket (for now, support for others will be added in the future)
+- Access to the runtime socket
+- `ssh` for remote hosts
+
+## Quick Start
 
 ```bash
 ctrwatch ps
-ctrwatch ps --all
+ctrwatch watch api worker
+ctrwatch logs --tail 200 api
+ctrwatch inspect api
+ctrwatch stats api worker
+```
+
+Use a configured tag:
+
+```bash
 ctrwatch ps @dev
-ctrwatch logs [--tail N] [--since DURATION] api worker db
-ctrwatch watch [--tail N] [--since DURATION] api worker db
-ctrwatch inspect api-1
-ctrwatch stats api worker db
-ctrwatch import docker-compose.yml
+ctrwatch watch @prod
+```
+
+Import local container names into config:
+
+```bash
+ctrwatch import compose.yaml --tag dev
 ctrwatch import --from-running --tag dev
+```
+
+## Commands
+
+```text
+ctrwatch ps [--all] [@tag]
+ctrwatch logs [--tail N] [--since DURATION] <container>... | @tag
+ctrwatch watch [--tail N] [--since DURATION] <container>... | @tag
+ctrwatch inspect <container> | @tag
+ctrwatch stats <container>... | @tag
+ctrwatch import [--tag TAG] [file]
+ctrwatch import --from-running
 ctrwatch config check
+ctrwatch help
 ```
 
 ## Watch TUI
+
+`watch` opens a terminal UI for live logs and CPU/memory stats:
 
 ```bash
 ctrwatch watch @prod-workers
@@ -40,20 +85,14 @@ Keys:
 - `a`: show all containers
 - `q` / `esc` / `ctrl+c`: quit
 
-Containers can specify a socket with `name@socket_path`:
-
-```bash
-ctrwatch logs api-1@/run/podman/podman.sock worker-1
-ctrwatch logs api-1@unix:///run/podman/podman.sock
-ctrwatch watch api-1@/var/run/docker.sock worker-1@/run/podman/podman.sock
-```
-
-Socket resolution order: `name@socket` in arg → `DOCKER_HOST` env → auto-detect.
+The planned next step is a TUI-first dashboard where running `ctrwatch` opens
+the TUI by default and the TUI can navigate logs, ps/table, inspect, and stats
+views. See [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md).
 
 ## Config
 
 Tagged containers are loaded from `$CTRWATCH_CONFIG`, `ctrwatch.yaml`, or
-`settings.yaml`:
+`settings.yaml`.
 
 ```yaml
 servers:
@@ -71,54 +110,103 @@ servers:
     tags: [prod]
 ```
 
-`host: localhost`, `host: 127.0.0.1`, or omitted `host` means local runtime.
+`host: localhost`, `host: 127.0.0.1`, or an omitted `host` means local runtime.
 Remote hosts use SSH and the configured runtime socket.
+
+Containers can also specify a socket directly:
+
+```bash
+ctrwatch logs api@/run/podman/podman.sock worker
+ctrwatch logs api@unix:///run/podman/podman.sock
+ctrwatch watch api@/var/run/docker.sock worker@/run/podman/podman.sock
+```
+
+Socket resolution order:
+
+1. `name@socket` in the container argument
+2. `DOCKER_HOST`
+3. auto-detected Docker or Podman socket
 
 ## Import
 
-Import a Docker Compose file or Podman Quadlet file into the config:
+Import a Docker Compose file or Podman Quadlet file:
 
 ```bash
 ctrwatch import compose.yaml --tag dev
 ctrwatch import api.container --tag dev
 ctrwatch import app.kube --tag dev
+```
+
+Import currently running local containers:
+
+```bash
 ctrwatch import --from-running --tag dev
 ```
 
-Compose import uses `container_name` when present. Otherwise ctrwatch derives
-the usual Compose name (`project-service-1`) and prints a warning.
+Compose import uses `container_name` when present. Otherwise `ctrwatch` derives
+the usual Compose name, such as `project-service-1`, and prints a warning.
 
 Quadlet import supports `.container`, `.pod`, and `.kube` files. For `.kube`
-files, ctrwatch reads `Yaml=...` and imports container names from that pod YAML.
+files, `ctrwatch` reads `Yaml=...` and imports container names from that pod
+YAML.
 
-## TODO
+## Runtime Support
 
-- Kubernetes contexts/namespaces through the Kubernetes API
-- Nomad job files
-- systemd services that run Docker/Podman manually
-- containerd/nerdctl containers
-- LXC/LXD containers
-- remote import over SSH
-- Docker Swarm stack files
-- Helm rendered manifests
+Current support is centered on Docker-compatible Engine API sockets:
 
-## Build
+- Docker: expected primary target
+- Podman: supported through its Docker-compatible socket
+- Other Docker-compatible runtimes: best effort
+
+Future runtime work is tracked in
+[docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md), including opt-in Podman
+integration tests and possible containerd, Kubernetes, LXC/LXD, and Nomad
+support.
+
+## Development
+
+Run tests:
 
 ```bash
-go build -o bin/ctrwatch .
+go test ./...
 ```
 
-## Quick install on a server
+If your environment has a read-only Go build cache, set a writable cache:
 
 ```bash
-curl -sfL https://raw.githubusercontent.com/jurci/ctrwatch/main/install.sh | sh
+GOCACHE=/tmp/ctrwatch-go-cache go test ./...
 ```
 
-Or download the binary from [GitHub Releases](https://github.com/jurci/ctrwatch/releases/latest)
-and place it in your `PATH`.
+Check coverage:
 
-## Requirements
+```bash
+go test ./... -cover
+```
 
-- Linux
-- Docker or Podman daemon running
-- Access to a container runtime socket
+Normal tests should stay daemon-free, SSH-free, fast, and deterministic.
+
+## Contributing
+
+Issues and pull requests are welcome. Please keep changes focused, update docs
+when behavior changes, and use conventional-style commit subjects such as:
+
+```text
+feat(tui): add inspect view
+fix(runtime): handle empty stats response
+docs(readme): document Podman socket setup
+test(config): cover tag resolution
+chore(deps): update Go module metadata
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
+
+## Roadmap
+
+See [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md) for the implementation
+plan. The main direction is:
+
+- make the TUI the default interactive entrypoint
+- keep direct CLI commands for scripting
+- add TUI views for logs, ps/table, inspect, and stats
+- verify Podman with opt-in integration tests
+- add more runtime backends only when there is a concrete implementation path

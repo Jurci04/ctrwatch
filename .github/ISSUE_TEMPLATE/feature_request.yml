@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a feature, runtime, or workflow improvement.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What are you trying to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - TUI
+        - CLI command
+        - Runtime support
+        - Config
+        - Import
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should ctrwatch do?
+    validations:
+      required: true
+  - type: textarea
+    id: testing
+    attributes:
+      label: Testing idea
+      description: How could this be tested without requiring real daemons in normal unit tests?
