@@ -8,7 +8,11 @@ import (
 
 // RunStats prints a one-shot CPU and memory snapshot for one or more containers.
 func RunStats(args []string) error {
-	containers := parseContainers(args)
+	containers, cleanup, err := resolveContainers(args)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	if len(containers) < 1 {
 		return fmt.Errorf("usage: ctrwatch stats <container> [container...]")
 	}

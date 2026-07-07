@@ -1,0 +1,20 @@
+servers:
+  # local Docker/Podman socket (auto-detected)
+  - containers:
+      - nginx
+      - redis
+    tags: [dev]
+
+  # remote server via SSH
+  - host: user@192.168.1.100
+    containers:
+      - api-1
+      - worker
+    tags: [prod]
+
+  # remote with custom socket path
+  - host: root@10.0.0.5
+    socket: /run/podman/podman.sock
+    containers:
+      - db
+    tags: [prod, database]

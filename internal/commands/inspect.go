@@ -9,7 +9,11 @@ import (
 
 // RunInspect prints detailed metadata about a single container.
 func RunInspect(args []string) error {
-	containers := parseContainers(args)
+	containers, cleanup, err := resolveContainers(args)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	if len(containers) < 1 {
 		return fmt.Errorf("usage: ctrwatch inspect <container>")
 	}

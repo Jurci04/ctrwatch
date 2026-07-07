@@ -21,7 +21,11 @@ func RunLogs(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	containers := parseContainers(fs.Args())
+	containers, cleanup, err := resolveContainers(fs.Args())
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	if len(containers) < 1 {
 		return fmt.Errorf("usage: ctrwatch logs [--tail N] [--since DURATION] <container> [container...]")
 	}

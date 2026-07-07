@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# user config (contains server addresses and credentials)
+ctrwatch.yaml
+
 # goreleaser output
 dist/
 

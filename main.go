@@ -9,13 +9,15 @@ import (
 )
 
 func printUsage() {
-	fmt.Println("Usage: ctrwatch <command> <optional args>")
+	fmt.Println("Usage: ctrwatch <command> [args]")
 	fmt.Println("Commands:")
-	fmt.Println("  ps [--all] - List containers")
-	fmt.Println("  logs <container> [container...] - Show logs for containers")
-	fmt.Println("  watch <container> [container...] - TUI split-view for containers")
-	fmt.Println("  inspect <container> - Show container details")
-	fmt.Println("  stats <container> [container...] - Show CPU/memory stats")
+	fmt.Println("  ps [--all] [@tag]          List containers")
+	fmt.Println("  logs [--tail N] [--since D] <container>... | @tag")
+	fmt.Println("  watch [--tail N] [--since D] <container>... | @tag")
+	fmt.Println("  inspect <container> | @tag  Show container details")
+	fmt.Println("  stats <container>... | @tag  Show CPU/memory stats")
+	fmt.Println()
+	fmt.Println("Use @tag to select containers from ctrwatch.yaml (or $CTRWATCH_CONFIG).")
 }
 
 func main() {

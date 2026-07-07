@@ -18,23 +18,23 @@ import (
 
 // pollStats periodically fetches CPU/memory stats for all containers
 // and sends them to the TUI model's stats channel.
-func pollStats(ctx context.Context, client *runtime.Client, containers []string, model *tui.Model) {
+func pollStats(ctx context.Context, containers []containerDef, model *tui.Model) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	fetch := func() {
 		stats := make(map[string]*runtime.ContainerStats, len(containers))
-		for _, name := range containers {
-			s, err := client.StatsContainer(ctx, name)
+		for _, c := range containers {
+			s, err := c.Client.StatsContainer(ctx, c.Name)
 			if err != nil {
-				stats[name] = &runtime.ContainerStats{Status: fmt.Sprintf("error: %v", err)}
+				stats[c.Name] = &runtime.ContainerStats{Status: fmt.Sprintf("error: %v", err)}
 				continue
 			}
-			info, err := client.InspectContainer(ctx, name)
+			info, err := c.Client.InspectContainer(ctx, c.Name)
 			if err == nil {
 				s.Status = info.State.Status
 			}
-			stats[name] = s
+			stats[c.Name] = s
 		}
 		if len(stats) > 0 {
 			model.StatsCh() <- stats
@@ -61,7 +61,11 @@ func RunWatch(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	containers := parseContainers(fs.Args())
+	containers, cleanup, err := resolveContainers(fs.Args())
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	if len(containers) < 1 {
 		return fmt.Errorf("usage: ctrwatch watch [--tail N] [--since DURATION] <container> [container...]")
 	}
@@ -103,7 +107,7 @@ func RunWatch(args []string) error {
 	}
 
 	statsCtx, statsStop := context.WithCancel(context.Background())
-	go pollStats(statsCtx, containers[0].Client, names, model)
+	go pollStats(statsCtx, containers, model)
 
 	go func() {
 		wg.Wait()
