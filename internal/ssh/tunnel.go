@@ -49,19 +49,19 @@ func Tunnel(host, remoteSocket string) (localSocket string, cleanup func(), err 
 			continue
 		}
 		if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 		_, err = conn.Write([]byte("GET /_ping HTTP/1.1\r\nHost: localhost\r\n\r\n"))
 		if err != nil {
-			conn.Close()
+			_ = conn.Close()
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 		resp := make([]byte, 32)
 		_, err = conn.Read(resp)
-		conn.Close()
+		_ = conn.Close()
 		if err == nil {
 			return localSocket, func() {
 				_ = cmd.Process.Kill()

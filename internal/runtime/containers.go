@@ -40,7 +40,7 @@ func (client *Client) ListContainers(ctx context.Context, all bool) ([]Container
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("list containers: %s", resp.Status)

@@ -66,7 +66,7 @@ func (client *Client) InspectContainer(ctx context.Context, containerID string) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("inspect %s: %s", containerID, resp.Status)
@@ -100,7 +100,7 @@ func (client *Client) DiffContainer(ctx context.Context, containerID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("diff %s: %s", containerID, resp.Status)
 	}
@@ -121,7 +121,7 @@ func (client *Client) TopContainer(ctx context.Context, containerID string) (*To
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("top %s: %s", containerID, resp.Status)
 	}

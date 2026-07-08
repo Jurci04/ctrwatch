@@ -69,7 +69,7 @@ func (client *Client) StreamLogs(
 			errors <- err
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			errors <- fmt.Errorf("stream logs %s: %s", containerID, resp.Status)

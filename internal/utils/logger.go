@@ -15,11 +15,14 @@ func LogToFile(message string) {
 		fmt.Printf("Error opening log file")
 		return
 	}
-	defer file.Close()
-	file.WriteString(message)
+	defer func() { _ = file.Close() }()
+	_, _ = file.WriteString(message)
 }
 
 func init() {
-	os.MkdirAll("./logs", 0755)
-	os.Create(LOG_FILE_DIR)
+	_ = os.MkdirAll("./logs", 0755)
+	file, err := os.Create(LOG_FILE_DIR)
+	if err == nil {
+		_ = file.Close()
+	}
 }

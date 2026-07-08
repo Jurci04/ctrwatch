@@ -65,12 +65,18 @@ func getContainer(name string) map[string]any {
 
 func handlePing(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+	_, _ = w.Write([]byte("OK"))
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func handleListContainers(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(containers)
+	writeJSON(w, containers)
 }
 
 func handleInspectContainer(w http.ResponseWriter, name string) {
@@ -104,8 +110,7 @@ func handleInspectContainer(w http.ResponseWriter, name string) {
 		"RestartCount": 1,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(inspect)
+	writeJSON(w, inspect)
 }
 
 func handleStatsContainer(w http.ResponseWriter, r *http.Request) {
@@ -124,8 +129,7 @@ func handleStatsContainer(w http.ResponseWriter, r *http.Request) {
 			"limit": 512 << 20,
 		},
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	writeJSON(w, stats)
 }
 
 func handleLogsContainer(w http.ResponseWriter, name string) {
@@ -152,7 +156,7 @@ func handleLogsContainer(w http.ResponseWriter, name string) {
 		frame[0] = 1 // stdout
 		binary.BigEndian.PutUint32(frame[4:8], uint32(len(line)))
 		copy(frame[8:], line)
-		w.Write(frame)
+		_, _ = w.Write(frame)
 		flusher.Flush()
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -170,8 +174,7 @@ func handleDiffContainer(w http.ResponseWriter, name string) {
 		{"Path": "/usr/share/nginx/html/index.html", "Kind": 0},
 		{"Path": "/tmp/session.lock", "Kind": 1},
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(changes)
+	writeJSON(w, changes)
 }
 
 func handleTopContainer(w http.ResponseWriter, r *http.Request) {
@@ -183,13 +186,12 @@ func handleTopContainer(w http.ResponseWriter, r *http.Request) {
 			{"10", "nginx", "00:00:00", "nginx worker process"},
 		},
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(top)
+	writeJSON(w, top)
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.Copy(io.Discard, r.Body)
+		_, _ = io.Copy(io.Discard, r.Body)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -233,13 +235,17 @@ func main() {
 
 	// Start Unix socket listener when --socket <path> is given
 	if socketPath != "" {
-		os.Remove(socketPath)
+		_ = os.Remove(socketPath)
 		unixListener, err := net.Listen("unix", socketPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to listen on unix socket: %v\n", err)
 			os.Exit(1)
 		}
-		go http.Serve(unixListener, loggingMiddleware(mux))
+		go func() {
+			if err := http.Serve(unixListener, loggingMiddleware(mux)); err != nil {
+				fmt.Fprintf(os.Stderr, "unix server error: %v\n", err)
+			}
+		}()
 	}
 
 	if err := http.Serve(tcpListener, loggingMiddleware(mux)); err != nil {
