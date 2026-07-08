@@ -1,6 +1,9 @@
 package tui
 
-import "ctrwatch/internal/runtime"
+import (
+	"ctrwatch/internal/runtime"
+	"ctrwatch/internal/ssh"
+)
 
 type viewType int
 
@@ -37,12 +40,14 @@ type topMsg struct {
 	Err error
 }
 
+type serverStateTickMsg struct{}
+
 type serverConnectMsg struct {
 	serverIdx  int
 	client     *runtime.Client
+	session    *ssh.ServerSession
 	containers []string
 	runtime    string
-	cleanup    func()
 	err        error
 }
 

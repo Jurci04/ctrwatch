@@ -52,7 +52,7 @@ type Model struct {
 
 	servers              []config.Server
 	serverStatus         []string
-	tunnelCleanups       []func()
+	serverSessions       []*ssh.ServerSession
 	serverContainerStart []int
 }
 
@@ -94,7 +94,7 @@ func NewModel(containers []string, clients []*runtime.Client, opts runtime.LogOp
 	if len(servers) > 0 {
 		m.servers = servers[0]
 		m.serverStatus = make([]string, len(m.servers))
-		m.tunnelCleanups = make([]func(), len(m.servers))
+		m.serverSessions = make([]*ssh.ServerSession, len(m.servers))
 		m.serverContainerStart = make([]int, len(m.servers))
 		for i := range m.serverContainerStart {
 			m.serverContainerStart[i] = -1
@@ -140,8 +140,17 @@ func (m *Model) Init() tea.Cmd {
 		}
 	}
 	go m.pollStats()
+	if len(m.servers) > 0 {
+		cmds = append(cmds, m.serverStateTick())
+	}
 	cmds = append(cmds, listenLogs(m.linesCh), listenStats(m.statsCh))
 	return tea.Batch(cmds...)
+}
+
+func (m *Model) serverStateTick() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return serverStateTickMsg{}
+	})
 }
 
 func (m *Model) streamLogs(client *runtime.Client, key, name string) {
@@ -305,31 +314,19 @@ func listenStats(ch <-chan map[string]*runtime.ContainerStats) tea.Cmd {
 func (m *Model) connectToServer(serverIdx int) tea.Cmd {
 	return func() tea.Msg {
 		s := m.servers[serverIdx]
-		var client *runtime.Client
-		var cleanupFn func()
+		session := ssh.NewServerSession(s)
+		client, err := session.Connect()
 
-		if config.IsLocalHost(s.Host) {
-			client = runtime.NewClientForSocket(s.Socket)
-			cleanupFn = func() {}
-		} else {
-			localSock, c, err := ssh.Tunnel(s.Host, s.Socket)
-			if err != nil {
-				return serverConnectMsg{serverIdx: serverIdx, err: err}
-			}
-			cleanupFn = c
-			client = runtime.NewClientForSocket(localSock)
-			client.Runtime = runtime.RuntimeKind(s.Socket)
-		}
-		if client.Runtime == "" {
-			client.Runtime = runtime.RuntimeKind(s.Socket)
+		if err != nil {
+			return serverConnectMsg{serverIdx: serverIdx, err: err}
 		}
 
 		return serverConnectMsg{
 			serverIdx:  serverIdx,
 			client:     client,
+			session:    session,
 			containers: s.Containers,
 			runtime:    client.Runtime,
-			cleanup:    cleanupFn,
 		}
 	}
 }
@@ -428,7 +425,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.view == viewServers && len(m.servers) > 0 {
 				idx := m.selected
-				if idx < len(m.servers) && m.serverStatus[idx] == "" {
+				if idx < len(m.servers) && (m.serverStatus[idx] == "" || m.serverStatus[idx] == "error" || m.serverStatus[idx] == "failed") {
 					m.serverStatus[idx] = "connecting"
 					if idx < len(m.serverContainerStart) {
 						m.serverContainerStart[idx] = -1
@@ -501,13 +498,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.top = msg.Top
 		}
 
+	case serverStateTickMsg:
+		if m.view == viewServers && len(m.servers) > 0 {
+			return m, m.serverStateTick()
+		}
+
 	case serverConnectMsg:
 		if msg.err != nil {
 			m.serverStatus[msg.serverIdx] = "error"
+			m.serverSessions[msg.serverIdx] = nil
 			return m, nil
 		}
-		m.serverStatus[msg.serverIdx] = "connected"
-		m.tunnelCleanups[msg.serverIdx] = msg.cleanup
+		m.serverSessions[msg.serverIdx] = msg.session
+		if msg.session != nil {
+			m.serverStatus[msg.serverIdx] = msg.session.State()
+		} else {
+			m.serverStatus[msg.serverIdx] = "connected"
+		}
 		m.serverContainerStart[msg.serverIdx] = len(m.containers)
 		for _, name := range msg.containers {
 			key := containerKey(msg.runtime, name)
@@ -527,13 +534,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) disconnectServer(srvIdx int) {
-	if m.serverStatus[srvIdx] != "connected" {
+	if m.serverStatus[srvIdx] != "connected" && m.serverStatus[srvIdx] != "reconnecting" && m.serverStatus[srvIdx] != "connecting" {
 		return
 	}
 	m.serverStatus[srvIdx] = ""
-	if m.tunnelCleanups[srvIdx] != nil {
-		m.tunnelCleanups[srvIdx]()
-		m.tunnelCleanups[srvIdx] = nil
+	if m.serverSessions[srvIdx] != nil {
+		_ = m.serverSessions[srvIdx].Disconnect()
+		m.serverSessions[srvIdx] = nil
 	}
 	start := m.serverContainerStart[srvIdx]
 	m.serverContainerStart[srvIdx] = -1

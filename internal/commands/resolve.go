@@ -57,15 +57,16 @@ func resolveTagged(tag string) ([]containerDef, func(), error) {
 		} else {
 			key := s.Host + "\x00" + s.Socket
 			if _, ok := clients[key]; !ok {
-				localSock, cleanup, err := ssh.Tunnel(s.Host, s.Socket)
+				session := ssh.NewServerSession(s)
+				client, err := session.Connect()
 				if err != nil {
 					for _, f := range cleanups {
 						f()
 					}
 					return nil, nil, err
 				}
-				cleanups = append(cleanups, cleanup)
-				c = runtime.NewClientForSocket(localSock)
+				cleanups = append(cleanups, func() { _ = session.Disconnect() })
+				c = client
 				clients[key] = c
 			} else {
 				c = clients[key]

@@ -506,13 +506,21 @@ func (m *Model) viewServers(bodyHeight, panelW int) string {
 			host = "localhost"
 		}
 		status := "○"
-		switch m.serverStatus[i] {
+		serverState := m.serverStatus[i]
+		if i < len(m.serverSessions) && m.serverSessions[i] != nil {
+			serverState = m.serverSessions[i].State()
+		}
+		switch serverState {
 		case "connected":
 			status = "●"
 		case "connecting":
 			status = "⋯"
+		case "reconnecting":
+			status = "↻"
 		case "error":
 			status = "✕"
+		case "failed":
+			status = "!"
 		}
 		sock := truncate(s.Socket, 28)
 		containers := strings.Join(s.Containers, ", ")
