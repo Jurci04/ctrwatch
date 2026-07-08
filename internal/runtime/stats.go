@@ -8,24 +8,24 @@ import (
 )
 
 type ContainerStats struct {
-	CPUPercent  float64
-	MemoryUsage uint64
-	MemoryLimit uint64
-	Status      string
-	Uptime      string
-	PIDsCurrent uint64
-	NetRxBytes  uint64
-	NetTxBytes  uint64
-	BlkReadBytes uint64
+	CPUPercent    float64
+	MemoryUsage   uint64
+	MemoryLimit   uint64
+	Status        string
+	Uptime        string
+	PIDsCurrent   uint64
+	NetRxBytes    uint64
+	NetTxBytes    uint64
+	BlkReadBytes  uint64
 	BlkWriteBytes uint64
 }
 
 type statsJSON struct {
-	CPUStats    cpuStats    `json:"cpu_stats"`
-	PreCPUStats cpuStats    `json:"precpu_stats"`
-	MemoryStats memoryStats `json:"memory_stats"`
-	PIDsStats   pidsStats   `json:"pids_stats"`
-	BlkioStats  blkioStats  `json:"blkio_stats"`
+	CPUStats    cpuStats            `json:"cpu_stats"`
+	PreCPUStats cpuStats            `json:"precpu_stats"`
+	MemoryStats memoryStats         `json:"memory_stats"`
+	PIDsStats   pidsStats           `json:"pids_stats"`
+	BlkioStats  blkioStats          `json:"blkio_stats"`
 	Networks    map[string]netStats `json:"networks"`
 }
 
@@ -113,13 +113,13 @@ func (client *Client) StatsContainer(ctx context.Context, containerID string) (*
 	}
 
 	return &ContainerStats{
-		CPUPercent:   cpuPercent,
-		MemoryUsage:  raw.MemoryStats.Usage,
-		MemoryLimit:  raw.MemoryStats.Limit,
-		PIDsCurrent:  raw.PIDsStats.Current,
-		NetRxBytes:   netRx,
-		NetTxBytes:   netTx,
-		BlkReadBytes: blkRead,
+		CPUPercent:    cpuPercent,
+		MemoryUsage:   raw.MemoryStats.Usage,
+		MemoryLimit:   raw.MemoryStats.Limit,
+		PIDsCurrent:   raw.PIDsStats.Current,
+		NetRxBytes:    netRx,
+		NetTxBytes:    netTx,
+		BlkReadBytes:  blkRead,
 		BlkWriteBytes: blkWrite,
 	}, nil
 }

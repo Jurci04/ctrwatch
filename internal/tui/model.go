@@ -48,10 +48,10 @@ type Model struct {
 	pollInterval time.Duration
 	disabled     map[string]bool
 
-	servers               []config.Server
-	serverStatus          []string
-	tunnelCleanups        []func()
-	serverContainerStart  []int
+	servers              []config.Server
+	serverStatus         []string
+	tunnelCleanups       []func()
+	serverContainerStart []int
 }
 
 func NewModel(containers []string, clients []*runtime.Client, opts runtime.LogOptions, pollInterval time.Duration, servers ...[]config.Server) *Model {

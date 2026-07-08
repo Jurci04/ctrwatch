@@ -82,8 +82,8 @@ func handleInspectContainer(w http.ResponseWriter, name string) {
 
 	created, _ := time.Parse(time.RFC3339, "2024-01-15T10:00:00Z")
 	inspect := map[string]any{
-		"Id":    c["Id"],
-		"Name":  "/" + name,
+		"Id":      c["Id"],
+		"Name":    "/" + name,
 		"Created": created,
 		"State": map[string]any{
 			"Status":     c["State"],
@@ -111,12 +111,12 @@ func handleInspectContainer(w http.ResponseWriter, name string) {
 func handleStatsContainer(w http.ResponseWriter, r *http.Request) {
 	stats := map[string]any{
 		"cpu_stats": map[string]any{
-			"cpu_usage":     map[string]any{"total_usage": 300000000},
+			"cpu_usage":        map[string]any{"total_usage": 300000000},
 			"system_cpu_usage": 1000000000,
-			"online_cpus":   4,
+			"online_cpus":      4,
 		},
 		"precpu_stats": map[string]any{
-			"cpu_usage":      map[string]any{"total_usage": 100000000},
+			"cpu_usage":        map[string]any{"total_usage": 100000000},
 			"system_cpu_usage": 500000000,
 		},
 		"memory_stats": map[string]any{
@@ -176,7 +176,7 @@ func handleDiffContainer(w http.ResponseWriter, name string) {
 
 func handleTopContainer(w http.ResponseWriter, r *http.Request) {
 	top := map[string]any{
-		"Titles":   []string{"PID", "USER", "TIME", "COMMAND"},
+		"Titles": []string{"PID", "USER", "TIME", "COMMAND"},
 		"Processes": [][]string{
 			{"1", "root", "00:00:01", "nginx -g daemon off;"},
 			{"7", "nginx", "00:00:00", "nginx -g daemon off;"},

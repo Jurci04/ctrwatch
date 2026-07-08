@@ -97,5 +97,3 @@ func RunLogs(args []string) error {
 		}
 	}
 }
-
-
