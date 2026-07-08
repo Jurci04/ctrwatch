@@ -104,6 +104,22 @@ func NewModel(containers []string, clients []*runtime.Client, opts runtime.LogOp
 func (m *Model) LinesCh() chan<- []runtime.LogLine                  { return m.linesCh }
 func (m *Model) StatsCh() chan<- map[string]*runtime.ContainerStats { return m.statsCh }
 
+func (m *Model) clampSelected() {
+	if m.view == viewServers {
+		if len(m.servers) == 0 {
+			m.selected = 0
+		} else if m.selected >= len(m.servers) {
+			m.selected = len(m.servers) - 1
+		}
+		return
+	}
+	if len(m.containers) == 0 {
+		m.selected = 0
+	} else if m.selected >= len(m.containers) {
+		m.selected = len(m.containers) - 1
+	}
+}
+
 func (m *Model) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	for i, name := range m.containers {

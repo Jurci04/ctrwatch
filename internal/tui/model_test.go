@@ -230,3 +230,19 @@ func TestConnectLocalServerUsesConfiguredSocket(t *testing.T) {
 		t.Fatalf("socket = %q", got.client.SocketPath)
 	}
 }
+
+func TestViewClampsServerSelectionWhenShowingContainers(t *testing.T) {
+	m := testModel([]string{"api"})
+	m.view = viewStats
+	m.selected = 5
+	m.width = 80
+	m.height = 24
+
+	view := m.View()
+	if !strings.Contains(view, "api") {
+		t.Fatalf("view missing container:\n%s", view)
+	}
+	if m.selected != 0 {
+		t.Fatalf("selected = %d, want 0", m.selected)
+	}
+}

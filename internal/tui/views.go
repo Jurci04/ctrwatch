@@ -36,6 +36,7 @@ func viewHeader(v viewType, w int) string {
 }
 
 func (m *Model) View() string {
+	m.clampSelected()
 	if len(m.containers) == 0 {
 		return m.emptyView()
 	}
