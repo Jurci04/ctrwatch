@@ -24,8 +24,10 @@ func Tunnel(host, remoteSocket string) (localSocket string, cleanup func(), err 
 		return "", nil, fmt.Errorf("temp socket: %w", err)
 	}
 	localSocket = f.Name()
-	f.Close()
-	os.Remove(localSocket)
+	if err := f.Close(); err != nil {
+		return "", nil, fmt.Errorf("temp socket: %w", err)
+	}
+	_ = os.Remove(localSocket)
 	cmd := exec.Command("ssh",
 		"-L", localSocket+":"+remoteSocket,
 		"-N", host,
@@ -46,7 +48,11 @@ func Tunnel(host, remoteSocket string) (localSocket string, cleanup func(), err 
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
-		conn.SetDeadline(time.Now().Add(2 * time.Second))
+		if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			conn.Close()
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
 		_, err = conn.Write([]byte("GET /_ping HTTP/1.1\r\nHost: localhost\r\n\r\n"))
 		if err != nil {
 			conn.Close()
@@ -58,15 +64,15 @@ func Tunnel(host, remoteSocket string) (localSocket string, cleanup func(), err 
 		conn.Close()
 		if err == nil {
 			return localSocket, func() {
-				cmd.Process.Kill()
-				cmd.Wait()
-				os.Remove(localSocket)
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+				_ = os.Remove(localSocket)
 			}, nil
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	cmd.Process.Kill()
-	cmd.Wait()
-	os.Remove(localSocket)
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	_ = os.Remove(localSocket)
 	return "", nil, fmt.Errorf("ssh tunnel to %s: %s", host, strings.TrimSpace(stderr.String()))
 }
