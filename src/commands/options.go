@@ -3,7 +3,7 @@ package commands
 import (
 	"strings"
 
-	"ctrwatch/internal/runtime"
+	"ctrwatch/src/runtime"
 )
 
 // containerDef associates a container name with its runtime client.

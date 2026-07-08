@@ -3,8 +3,8 @@ package ssh
 import (
 	"sync"
 
-	"ctrwatch/internal/config"
-	"ctrwatch/internal/runtime"
+	"ctrwatch/src/config"
+	"ctrwatch/src/runtime"
 )
 
 type ServerSession struct {

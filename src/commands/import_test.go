@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"ctrwatch/internal/config"
+	"ctrwatch/src/config"
 )
 
 func TestImportContainers(t *testing.T) {

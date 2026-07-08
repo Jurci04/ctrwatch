@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"ctrwatch/internal/runtime"
+	"ctrwatch/src/runtime"
 )
 
 // RunInspect prints detailed metadata about a single container.

@@ -3,7 +3,7 @@ package ssh
 import (
 	"testing"
 
-	"ctrwatch/internal/config"
+	"ctrwatch/src/config"
 )
 
 func TestServerSessionStartsUnknown(t *testing.T) {

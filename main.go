@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"ctrwatch/internal/commands"
+	"ctrwatch/src/commands"
 )
 
 func printUsage() {

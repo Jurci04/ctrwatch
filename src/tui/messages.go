@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"ctrwatch/internal/runtime"
-	"ctrwatch/internal/ssh"
+	"ctrwatch/src/runtime"
+	"ctrwatch/src/ssh"
 )
 
 type viewType int

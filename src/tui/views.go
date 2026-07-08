@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"ctrwatch/internal/runtime"
+	"ctrwatch/src/runtime"
 
 	"github.com/charmbracelet/lipgloss"
 )

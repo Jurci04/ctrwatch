@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"ctrwatch/internal/runtime"
+	"ctrwatch/src/runtime"
 )
 
 func TestShortID(t *testing.T) {

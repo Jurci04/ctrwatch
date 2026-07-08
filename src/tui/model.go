@@ -6,9 +6,9 @@ import (
 	"maps"
 	"time"
 
-	"ctrwatch/internal/config"
-	"ctrwatch/internal/runtime"
-	"ctrwatch/internal/ssh"
+	"ctrwatch/src/config"
+	"ctrwatch/src/runtime"
+	"ctrwatch/src/ssh"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"ctrwatch/internal/runtime"
+	"ctrwatch/src/runtime"
 )
 
 // RunPS lists containers in a formatted table.

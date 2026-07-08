@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	cfgpkg "ctrwatch/internal/config"
+	cfgpkg "ctrwatch/src/config"
 )
 
 // RunConfig handles config maintenance commands.

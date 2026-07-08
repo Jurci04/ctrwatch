@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"ctrwatch/internal/config"
-	"ctrwatch/internal/runtime"
+	"ctrwatch/src/config"
+	"ctrwatch/src/runtime"
 
 	"gopkg.in/yaml.v3"
 )

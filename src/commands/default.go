@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"ctrwatch/internal/config"
-	"ctrwatch/internal/runtime"
-	"ctrwatch/internal/tui"
+	"ctrwatch/src/config"
+	"ctrwatch/src/runtime"
+	"ctrwatch/src/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

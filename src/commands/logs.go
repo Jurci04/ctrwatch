@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"ctrwatch/internal/runtime"
+	"ctrwatch/src/runtime"
 )
 
 // RunLogs streams logs from one or more containers to stdout.

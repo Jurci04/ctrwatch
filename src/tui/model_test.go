@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"ctrwatch/internal/config"
-	"ctrwatch/internal/runtime"
+	"ctrwatch/src/config"
+	"ctrwatch/src/runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
