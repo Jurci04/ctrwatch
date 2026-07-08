@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="jurci/ctrwatch"
+REPO="Jurci04/ctrwatch"
 
 # detect arch
 case "$(uname -m)" in

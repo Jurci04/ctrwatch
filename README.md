@@ -13,11 +13,11 @@ via SSH.
 Install the latest Linux release:
 
 ```bash
-curl -sfL https://raw.githubusercontent.com/jurci/ctrwatch/main/install.sh | sh
+curl -sfL https://raw.githubusercontent.com/Jurci04/ctrwatch/main/install.sh | sh
 ```
 
 Or download a binary from
-[GitHub Releases](https://github.com/jurci/ctrwatch/releases/latest) and place
+[GitHub Releases](https://github.com/Jurci04/ctrwatch/releases/latest) and place
 it in your `PATH`.
 
 Build from source:
