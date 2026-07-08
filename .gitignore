@@ -36,6 +36,7 @@ dist/
 # local build output
 bin/
 ctrwatch
+test/e2e/mockserver/mockserver
 
 # Editor/IDE
 # .idea/

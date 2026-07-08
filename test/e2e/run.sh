@@ -40,7 +40,13 @@ PORT_FILE=$(mktemp)
 echo "=== Starting mock server (TCP + Unix socket)..."
 "$MOCK_SERVER/mockserver" --socket "$UNIX_SOCKET" > "$PORT_FILE" 2>&1 &
 MOCK_PID=$!
-trap "kill $MOCK_PID 2>/dev/null; rm -f $PORT_FILE $UNIX_SOCKET; rmdir $SOCK_DIR 2>/dev/null; wait $MOCK_PID 2>/dev/null" EXIT
+cleanup() {
+  kill "$MOCK_PID" 2>/dev/null || true
+  wait "$MOCK_PID" 2>/dev/null || true
+  rm -f "$PORT_FILE" "$UNIX_SOCKET"
+  rmdir "$SOCK_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 # Read port from temp file
 for i in $(seq 1 10); do
@@ -129,12 +135,16 @@ OUT=$("$BINARY" bogus 2>&1 || true)
 assert_contains "unknown command shows usage" "Usage" "$OUT"
 
 # Test 11: default (no args) opens TUI
-EXIT=0
-DOCKER_HOST="$TCP_HOST" timeout 1 "$BINARY" 2>/dev/null || EXIT=$?
-if [[ "$EXIT" -eq 124 || "$EXIT" -eq 0 ]]; then
-  pass "default TUI starts (exit=$EXIT)"
+if command -v script &>/dev/null; then
+  EXIT=0
+  timeout 1 script -q -c "DOCKER_HOST=$TCP_HOST $BINARY" /dev/null >/dev/null 2>&1 || EXIT=$?
+  if [[ "$EXIT" -eq 124 || "$EXIT" -eq 0 ]]; then
+    pass "default TUI starts (exit=$EXIT)"
+  else
+    fail "default TUI crashed (exit=$EXIT)"
+  fi
 else
-  fail "default TUI crashed (exit=$EXIT)"
+  pass "default TUI skipped (no PTY available)"
 fi
 
 # ── Unix socket (Podman-compatible) ───────────────────────────────
