@@ -54,8 +54,8 @@ stay available for scripting.
 - Mock E2E tests run against both TCP and Unix socket transports (33 tests).
 - Real-container integration tests (`CTRWATCH_INTEGRATION=1`) work with Docker
   and Podman.
-- `DOCKER_HOST` environment variable fully supported for any Docker-compatible
-  runtime.
+- Runtime selection is explicit through config sockets or `name@socket`
+  arguments; `DOCKER_HOST` is intentionally ignored.
 - Configured local and remote servers can point at separate Docker and Podman
   sockets at the same time.
 - Real-container E2E tests support `--runtime docker|podman` to avoid mixing
@@ -170,8 +170,7 @@ Run and record a real Podman session before adding Podman connection discovery.
 
 - Verify rootless socket: `/run/user/$UID/podman/podman.sock`.
 - Verify system socket when available: `/run/podman/podman.sock`.
-- Verify `DOCKER_HOST=unix://... ctrwatch`, direct CLI commands, and default
-  TUI.
+- Verify configured Podman sockets, direct CLI commands, and default TUI.
 - Verify a config with Docker and Podman sockets at the same time.
 - Verify remote Podman over SSH with a configured `socket` path.
 

@@ -7,7 +7,7 @@
 ```
 
 Builds ctrwatch + a mock Docker Engine API server, runs 33 tests against both
-TCP (`DOCKER_HOST`) and Unix socket modes. Zero dependencies beyond Go.
+TCP and Unix socket modes. Zero dependencies beyond Go.
 
 ## Real container tests (requires Docker or Podman)
 
@@ -28,16 +28,15 @@ To test against a real Podman socket:
 # Install Podman (https://podman.io/docs/installation)
 sudo apt install podman  # Debian/Ubuntu
 
-# Run with Podman socket
-DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock \
-  CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh --runtime podman
+# Run with Podman
+CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh --runtime podman
 ```
 
 The runtime client auto-detects Podman sockets at:
 - `/run/podman/podman.sock`
 - `/run/user/$UID/podman/podman.sock`
 
-Or set `DOCKER_HOST` to any Docker-compatible socket path.
+Use `ctrwatch.yaml` to select a specific Podman socket.
 
 ## Manual Podman checklist
 
@@ -56,19 +55,25 @@ podman run -d --name ctrwatch-podman-api --rm alpine sh -c 'while true; do echo 
 podman run -d --name ctrwatch-podman-worker --rm alpine sh -c 'while true; do echo worker; sleep 1; done'
 ```
 
-Set the rootless Podman socket:
+Add the rootless Podman socket to `ctrwatch.yaml`:
 
-```bash
-export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+```yaml
+servers:
+  - host: localhost
+    socket: /run/user/1000/podman/podman.sock
+    containers:
+      - ctrwatch-podman-api
+      - ctrwatch-podman-worker
+    tags: [podman]
 ```
 
 Run CLI checks:
 
 ```bash
-./ctrwatch ps
-./ctrwatch inspect ctrwatch-podman-api
-./ctrwatch stats ctrwatch-podman-api ctrwatch-podman-worker
-timeout 3 ./ctrwatch logs --tail 5 ctrwatch-podman-api
+./ctrwatch ps @podman
+./ctrwatch inspect @podman
+./ctrwatch stats @podman
+timeout 3 ./ctrwatch logs --tail 5 @podman
 ```
 
 Run the real integration test against Podman:

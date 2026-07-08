@@ -41,6 +41,7 @@ type serverConnectMsg struct {
 	serverIdx  int
 	client     *runtime.Client
 	containers []string
+	runtime    string
 	cleanup    func()
 	err        error
 }

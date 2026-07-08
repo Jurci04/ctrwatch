@@ -126,6 +126,7 @@ func (m *Model) viewLogs(bodyHeight, panelW int) string {
 
 	var panels []string
 	for i, name := range containers {
+		idx := m.indexOfContainer(name)
 		contentHeight := bodyRows
 		color := panelColors[i%len(panelColors)]
 		selected := name == m.containers[m.selected]
@@ -133,7 +134,7 @@ func (m *Model) viewLogs(bodyHeight, panelW int) string {
 		bStyle := lipgloss.NewStyle().Foreground(color).Bold(selected)
 		vl := bStyle.Render("│")
 
-		title := " " + name
+		title := fmt.Sprintf(" [%s] %s", m.containerRuntime(idx), m.containerName(idx))
 		if s, ok := m.stats[name]; ok {
 			memMB := float64(s.MemoryUsage) / 1024 / 1024
 			status := s.Status
@@ -198,6 +199,38 @@ func (m *Model) sourceContainers() []string {
 	return out
 }
 
+func (m *Model) sourceContainerNames() []string {
+	if len(m.clients) <= m.selected || m.clients[m.selected] == nil {
+		return m.containerNames
+	}
+	client := m.clients[m.selected]
+	var out []string
+	for i, name := range m.containerNames {
+		if i < len(m.clients) && m.clients[i] == client {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func (m *Model) indexOfContainer(key string) int {
+	for i, name := range m.containers {
+		if name == key {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *Model) keyForContainer(client *runtime.Client, rawName string) (string, int) {
+	for i, name := range m.containerNames {
+		if name == rawName && i < len(m.clients) && m.clients[i] == client {
+			return m.containers[i], i
+		}
+	}
+	return rawName, -1
+}
+
 func (m *Model) viewPS(bodyHeight, panelW int) string {
 	innerW := max(panelW-2, 1)
 	info := m.containersInfo
@@ -210,13 +243,15 @@ func (m *Model) viewPS(bodyHeight, panelW int) string {
 	sc := m.sourceContainers()
 	top, bottom := boxBorder(fmt.Sprintf(" PS: %s — %d/%d", selName, len(sc), len(info)), innerW)
 	style := lipgloss.NewStyle().Width(innerW)
-	scSet := make(map[string]bool, len(sc))
-	for _, n := range sc {
+	scNames := m.sourceContainerNames()
+	scSet := make(map[string]bool, len(scNames))
+	for _, n := range scNames {
 		scSet[n] = true
 	}
+	selectedClient := m.clients[m.selected]
 
 	var body []string
-	body = append(body, "│"+style.Render(truncate(fmt.Sprintf("    %-26s %-12s %-24s %-10s %s", "NAME", "ID", "IMAGE", "STATE", "STATUS"), innerW))+"│")
+	body = append(body, "│"+style.Render(truncate(fmt.Sprintf("    %-8s %-24s %-12s %-24s %-10s %s", "RT", "NAME", "ID", "IMAGE", "STATE", "STATUS"), innerW))+"│")
 
 	// connected section
 	connectedHeader := false
@@ -229,10 +264,11 @@ func (m *Model) viewPS(bodyHeight, panelW int) string {
 			body = append(body, "│"+style.Render(truncate(lipgloss.NewStyle().Bold(true).Render("  Connected"), innerW))+"│")
 			connectedHeader = true
 		}
+		key, idx := m.keyForContainer(selectedClient, cn)
 		id := runtime.ShortID(c.ID)
-		row := fmt.Sprintf("%-26s %-12s %-24s %-10s %s", truncate(cn, 26), id, truncate(c.Image, 24), c.State, c.Status)
+		row := fmt.Sprintf("%-8s %-24s %-12s %-24s %-10s %s", m.containerRuntime(idx), truncate(cn, 24), id, truncate(c.Image, 24), c.State, c.Status)
 		marker := "    "
-		if cn == selName {
+		if key == selName {
 			marker = "●   "
 		}
 		body = append(body, "│"+style.Render(truncate(marker+row, innerW))+"│")
@@ -251,7 +287,7 @@ func (m *Model) viewPS(bodyHeight, panelW int) string {
 			allHeader = true
 		}
 		id := runtime.ShortID(c.ID)
-		row := fmt.Sprintf("%-26s %-12s %-24s %-10s %s", truncate(cn, 26), id, truncate(c.Image, 24), c.State, c.Status)
+		row := fmt.Sprintf("%-8s %-24s %-12s %-24s %-10s %s", m.containerRuntime(m.selected), truncate(cn, 24), id, truncate(c.Image, 24), c.State, c.Status)
 		body = append(body, "│"+style.Render(truncate("    "+row, innerW))+"│")
 	}
 
@@ -287,7 +323,7 @@ func (m *Model) viewStats(bodyHeight, panelW int) string {
 	if m.focused {
 		name := m.containers[m.selected]
 		s := m.stats[name]
-		title := name
+		title := fmt.Sprintf("%s/%s", m.containerRuntime(m.selected), m.containerName(m.selected))
 		if s != nil && s.Uptime != "" {
 			title = fmt.Sprintf("%s — %s", name, s.Uptime)
 		}
@@ -403,9 +439,9 @@ func (m *Model) viewStats(bodyHeight, panelW int) string {
 	}
 	style := lipgloss.NewStyle().Width(innerW)
 	body := []string{
-		"│" + style.Render(truncate(fmt.Sprintf("    %-26s %6s %6s %-16s %-20s %-10s %5s %10s %10s", "NAME", "CPU", "MEM%", "MEM", "STATUS", "UPTIME", "PIDS", "NET", "BLK"), innerW)) + "│",
+		"│" + style.Render(truncate(fmt.Sprintf("    %-8s %-22s %6s %6s %-16s %-20s %-10s %5s %10s %10s", "RT", "NAME", "CPU", "MEM%", "MEM", "STATUS", "UPTIME", "PIDS", "NET", "BLK"), innerW)) + "│",
 	}
-	for _, name := range m.containers {
+	for i, name := range m.containers {
 		if m.focused && name != selName {
 			continue
 		}
@@ -414,8 +450,10 @@ func (m *Model) viewStats(bodyHeight, panelW int) string {
 		if name == selName {
 			marker = "●   "
 		}
+		rawName := m.containerName(i)
+		runtimeName := m.containerRuntime(i)
 		if s == nil {
-			row := fmt.Sprintf("%-26s %5s %5s %-16s %-20s %-10s %5s %10s %10s", truncate(name, 26), "-", "-", "-", "-", "-", "-", "-", "-")
+			row := fmt.Sprintf("%-8s %-22s %5s %5s %-16s %-20s %-10s %5s %10s %10s", runtimeName, truncate(rawName, 22), "-", "-", "-", "-", "-", "-", "-", "-")
 			body = append(body, "│"+style.Render(truncate(marker+row, innerW))+"│")
 			continue
 		}
@@ -439,7 +477,7 @@ func (m *Model) viewStats(bodyHeight, panelW int) string {
 		if blk == "0B" {
 			blk = "-"
 		}
-		row := fmt.Sprintf("%-26s %5.1f%% %5.1f%% %-16s %-20s %-10s %5s %10s %10s", truncate(name, 26), s.CPUPercent, memPct, memStr, s.Status, uptime, pids, net, blk)
+		row := fmt.Sprintf("%-8s %-22s %5.1f%% %5.1f%% %-16s %-20s %-10s %5s %10s %10s", runtimeName, truncate(rawName, 22), s.CPUPercent, memPct, memStr, s.Status, uptime, pids, net, blk)
 		body = append(body, "│"+style.Render(truncate(marker+row, innerW))+"│")
 	}
 	body = padBody(body, innerW, bodyHeight)

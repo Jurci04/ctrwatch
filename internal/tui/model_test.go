@@ -151,8 +151,8 @@ func TestStatsViewRendersStats(t *testing.T) {
 	m.view = viewStats
 	m.width = 80
 	m.height = 24
-	m.stats["nginx"] = &runtime.ContainerStats{CPUPercent: 12.5, MemoryUsage: 45 << 20, MemoryLimit: 512 << 20, Status: "running"}
-	m.stats["redis"] = &runtime.ContainerStats{CPUPercent: 2.1, MemoryUsage: 32 << 20, MemoryLimit: 512 << 20, Status: "running"}
+	m.stats[m.containers[0]] = &runtime.ContainerStats{CPUPercent: 12.5, MemoryUsage: 45 << 20, MemoryLimit: 512 << 20, Status: "running"}
+	m.stats[m.containers[1]] = &runtime.ContainerStats{CPUPercent: 2.1, MemoryUsage: 32 << 20, MemoryLimit: 512 << 20, Status: "running"}
 
 	view := m.View()
 	if !strings.Contains(view, "nginx") || !strings.Contains(view, "redis") {
@@ -160,6 +160,28 @@ func TestStatsViewRendersStats(t *testing.T) {
 	}
 	if !strings.Contains(view, "12.5") {
 		t.Fatalf("stats view missing cpu:\n%s", view)
+	}
+}
+
+func TestStatsViewShowsRuntimeLabels(t *testing.T) {
+	docker := runtime.NewClientForSocket("/var/run/docker.sock")
+	podman := runtime.NewClientForSocket("/run/user/1000/podman/podman.sock")
+	m := NewModel(
+		[]string{"api", "api"},
+		[]*runtime.Client{docker, podman},
+		runtime.LogOptions{},
+		0,
+	)
+	m.view = viewStats
+	m.width = 100
+	m.height = 24
+
+	view := m.View()
+	if !strings.Contains(view, "docker") {
+		t.Fatalf("stats view missing docker label:\n%s", view)
+	}
+	if !strings.Contains(view, "podman") {
+		t.Fatalf("stats view missing podman label:\n%s", view)
 	}
 }
 

@@ -25,19 +25,21 @@ type containerMeta struct {
 }
 
 type Model struct {
-	containers []string
-	clients    []*runtime.Client
-	lines      map[string][]runtime.LogLine
-	stats      map[string]*runtime.ContainerStats
-	linesCh    chan []runtime.LogLine
-	statsCh    chan map[string]*runtime.ContainerStats
-	width      int
-	height     int
-	selected   int
-	focused    bool
-	ctx        context.Context
-	cancel     context.CancelFunc
-	logOpts    runtime.LogOptions
+	containers        []string
+	containerNames    []string
+	containerRuntimes []string
+	clients           []*runtime.Client
+	lines             map[string][]runtime.LogLine
+	stats             map[string]*runtime.ContainerStats
+	linesCh           chan []runtime.LogLine
+	statsCh           chan map[string]*runtime.ContainerStats
+	width             int
+	height            int
+	selected          int
+	focused           bool
+	ctx               context.Context
+	cancel            context.CancelFunc
+	logOpts           runtime.LogOptions
 
 	view           viewType
 	containersInfo []runtime.Container
@@ -59,20 +61,33 @@ func NewModel(containers []string, clients []*runtime.Client, opts runtime.LogOp
 	if pollInterval <= 0 {
 		pollInterval = 10 * time.Second
 	}
+	names := append([]string(nil), containers...)
+	runtimes := make([]string, len(containers))
+	for i := range containers {
+		if i < len(clients) && clients[i] != nil {
+			runtimes[i] = clients[i].Runtime
+		}
+		if runtimes[i] == "" {
+			runtimes[i] = "runtime"
+		}
+		containers[i] = containerKey(runtimes[i], names[i])
+	}
 	m := &Model{
-		containers:   containers,
-		clients:      clients,
-		lines:        make(map[string][]runtime.LogLine),
-		stats:        make(map[string]*runtime.ContainerStats),
-		disabled:     make(map[string]bool),
-		linesCh:      make(chan []runtime.LogLine, 64),
-		statsCh:      make(chan map[string]*runtime.ContainerStats, 4),
-		width:        80,
-		height:       24,
-		ctx:          ctx,
-		cancel:       cancel,
-		logOpts:      opts,
-		pollInterval: pollInterval,
+		containers:        containers,
+		containerNames:    names,
+		containerRuntimes: runtimes,
+		clients:           clients,
+		lines:             make(map[string][]runtime.LogLine),
+		stats:             make(map[string]*runtime.ContainerStats),
+		disabled:          make(map[string]bool),
+		linesCh:           make(chan []runtime.LogLine, 64),
+		statsCh:           make(chan map[string]*runtime.ContainerStats, 4),
+		width:             80,
+		height:            24,
+		ctx:               ctx,
+		cancel:            cancel,
+		logOpts:           opts,
+		pollInterval:      pollInterval,
 	}
 	if len(servers) > 0 {
 		m.servers = servers[0]
@@ -90,16 +105,24 @@ func (m *Model) LinesCh() chan<- []runtime.LogLine                  { return m.l
 func (m *Model) StatsCh() chan<- map[string]*runtime.ContainerStats { return m.statsCh }
 
 func (m *Model) Init() tea.Cmd {
+	var cmds []tea.Cmd
 	for i, name := range m.containers {
 		if i < len(m.clients) && m.clients[i] != nil {
-			go m.streamLogs(m.clients[i], name)
+			go m.streamLogs(m.clients[i], name, m.containerName(i))
+		}
+	}
+	for i, s := range m.servers {
+		if config.IsLocalHost(s.Host) {
+			m.serverStatus[i] = "connecting"
+			cmds = append(cmds, m.connectToServer(i))
 		}
 	}
 	go m.pollStats()
-	return tea.Batch(listenLogs(m.linesCh), listenStats(m.statsCh))
+	cmds = append(cmds, listenLogs(m.linesCh), listenStats(m.statsCh))
+	return tea.Batch(cmds...)
 }
 
-func (m *Model) streamLogs(client *runtime.Client, name string) {
+func (m *Model) streamLogs(client *runtime.Client, key, name string) {
 	lines, errs := client.StreamLogs(m.ctx, name, m.logOpts)
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
@@ -114,6 +137,7 @@ func (m *Model) streamLogs(client *runtime.Client, name string) {
 				}
 				goto done
 			}
+			line.Container = key
 			batch = append(batch, line)
 		case <-ticker.C:
 			if len(batch) > 0 {
@@ -128,9 +152,33 @@ func (m *Model) streamLogs(client *runtime.Client, name string) {
 done:
 	if err := runtime.ReadStreamError(errs); err != nil {
 		m.linesCh <- []runtime.LogLine{
-			{Container: name, Text: fmt.Sprintf("error: %v", err)},
+			{Container: key, Text: fmt.Sprintf("error: %v", err)},
 		}
 	}
+}
+
+func (m *Model) containerName(i int) string {
+	if i >= 0 && i < len(m.containerNames) {
+		return m.containerNames[i]
+	}
+	if i >= 0 && i < len(m.containers) {
+		return m.containers[i]
+	}
+	return ""
+}
+
+func (m *Model) containerRuntime(i int) string {
+	if i >= 0 && i < len(m.containerRuntimes) && m.containerRuntimes[i] != "" {
+		return m.containerRuntimes[i]
+	}
+	return "runtime"
+}
+
+func containerKey(runtimeName, name string) string {
+	if runtimeName == "" {
+		runtimeName = "runtime"
+	}
+	return runtimeName + "/" + name
 }
 
 func (m *Model) pollStats() {
@@ -143,8 +191,8 @@ func (m *Model) pollStats() {
 	const refreshMeta = 60 * time.Second
 	metaCache := map[string]*containerMeta{}
 
-	loadMeta := func(i int, c string) {
-		info, err := m.clients[i].InspectContainer(m.ctx, c)
+	loadMeta := func(i int, key, name string) {
+		info, err := m.clients[i].InspectContainer(m.ctx, name)
 		if err != nil {
 			return
 		}
@@ -155,7 +203,7 @@ func (m *Model) pollStats() {
 				meta.startedAt = t
 			}
 		}
-		metaCache[c] = meta
+		metaCache[key] = meta
 	}
 
 	formatUptime := func(d time.Duration) string {
@@ -170,19 +218,20 @@ func (m *Model) pollStats() {
 
 	fetch := func() {
 		stats := make(map[string]*runtime.ContainerStats, len(m.containers))
-		for i, c := range m.containers {
+		for i, key := range m.containers {
 			if i >= len(m.clients) || m.clients[i] == nil {
 				continue
 			}
-			s, err := m.clients[i].StatsContainer(m.ctx, c)
+			name := m.containerName(i)
+			s, err := m.clients[i].StatsContainer(m.ctx, name)
 			if err != nil {
-				stats[c] = &runtime.ContainerStats{Status: fmt.Sprintf("error: %v", err)}
+				stats[key] = &runtime.ContainerStats{Status: fmt.Sprintf("error: %v", err)}
 				continue
 			}
-			meta := metaCache[c]
+			meta := metaCache[key]
 			if meta == nil || time.Since(meta.fetchedAt) > refreshMeta {
-				loadMeta(i, c)
-				meta = metaCache[c]
+				loadMeta(i, key, name)
+				meta = metaCache[key]
 			}
 			if meta != nil {
 				s.Status = meta.status
@@ -190,7 +239,7 @@ func (m *Model) pollStats() {
 					s.Uptime = formatUptime(time.Since(meta.startedAt))
 				}
 			}
-			stats[c] = s
+			stats[key] = s
 		}
 		if len(stats) > 0 {
 			select {
@@ -247,12 +296,17 @@ func (m *Model) connectToServer(serverIdx int) tea.Cmd {
 			}
 			cleanupFn = c
 			client = runtime.NewClientForSocket(localSock)
+			client.Runtime = runtime.RuntimeKind(s.Socket)
+		}
+		if client.Runtime == "" {
+			client.Runtime = runtime.RuntimeKind(s.Socket)
 		}
 
 		return serverConnectMsg{
 			serverIdx:  serverIdx,
 			client:     client,
 			containers: s.Containers,
+			runtime:    client.Runtime,
 			cleanup:    cleanupFn,
 		}
 	}
@@ -279,7 +333,7 @@ func (m *Model) fetchInspect() tea.Cmd {
 		if idx < 0 || idx >= len(m.clients) || m.clients[idx] == nil {
 			return inspectMsg{Err: fmt.Errorf("no client for selected container")}
 		}
-		info, err := m.clients[idx].InspectContainer(ctx, m.containers[idx])
+		info, err := m.clients[idx].InspectContainer(ctx, m.containerName(idx))
 		return inspectMsg{Inspect: info, Err: err}
 	}
 }
@@ -292,7 +346,7 @@ func (m *Model) fetchDiff() tea.Cmd {
 		if idx < 0 || idx >= len(m.clients) || m.clients[idx] == nil {
 			return diffMsg{Err: fmt.Errorf("no client for selected container")}
 		}
-		changes, err := m.clients[idx].DiffContainer(ctx, m.containers[idx])
+		changes, err := m.clients[idx].DiffContainer(ctx, m.containerName(idx))
 		return diffMsg{Changes: changes, Err: err}
 	}
 }
@@ -305,7 +359,7 @@ func (m *Model) fetchTop() tea.Cmd {
 		if idx < 0 || idx >= len(m.clients) || m.clients[idx] == nil {
 			return topMsg{Err: fmt.Errorf("no client for selected container")}
 		}
-		top, err := m.clients[idx].TopContainer(ctx, m.containers[idx])
+		top, err := m.clients[idx].TopContainer(ctx, m.containerName(idx))
 		return topMsg{Top: top, Err: err}
 	}
 }
@@ -434,10 +488,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tunnelCleanups[msg.serverIdx] = msg.cleanup
 		m.serverContainerStart[msg.serverIdx] = len(m.containers)
 		for _, name := range msg.containers {
-			m.containers = append(m.containers, name)
+			key := containerKey(msg.runtime, name)
+			m.containers = append(m.containers, key)
+			m.containerNames = append(m.containerNames, name)
+			m.containerRuntimes = append(m.containerRuntimes, msg.runtime)
 			m.clients = append(m.clients, msg.client)
-			m.lines[name] = nil
-			go m.streamLogs(msg.client, name)
+			m.lines[key] = nil
+			go m.streamLogs(msg.client, key, name)
 		}
 		if len(m.containers) > 0 && m.view == viewServers && m.selected >= len(m.servers) {
 			m.selected = 0
@@ -465,12 +522,15 @@ func (m *Model) disconnectServer(srvIdx int) {
 	end := start + count
 
 	for _, name := range m.servers[srvIdx].Containers {
-		delete(m.lines, name)
-		delete(m.stats, name)
-		delete(m.disabled, name)
+		key := containerKey(runtime.RuntimeKind(m.servers[srvIdx].Socket), name)
+		delete(m.lines, key)
+		delete(m.stats, key)
+		delete(m.disabled, key)
 	}
 
 	m.containers = append(m.containers[:start], m.containers[end:]...)
+	m.containerNames = append(m.containerNames[:start], m.containerNames[end:]...)
+	m.containerRuntimes = append(m.containerRuntimes[:start], m.containerRuntimes[end:]...)
 	m.clients = append(m.clients[:start], m.clients[end:]...)
 
 	for i := range m.serverContainerStart {

@@ -162,8 +162,8 @@ ctrwatch stats api@/var/run/docker.sock worker@/run/podman/podman.sock
 Socket resolution order:
 
 1. `name@socket` in the container argument
-2. `DOCKER_HOST`
-3. auto-detected Docker or Podman socket
+2. configured `socket` in `ctrwatch.yaml`
+3. auto-detected local Docker or Podman socket
 
 ## Import
 
@@ -207,8 +207,8 @@ socket paths:
 Examples:
 
 ```bash
-DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock ctrwatch
-ctrwatch ps
+ctrwatch ps @podman
+ctrwatch stats @podman
 ctrwatch logs api@/run/user/$(id -u)/podman/podman.sock
 ```
 

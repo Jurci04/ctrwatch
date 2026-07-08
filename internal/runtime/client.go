@@ -16,12 +16,10 @@ type Client struct {
 	httpClient *http.Client
 	// SocketPath is the resolved daemon address (unix:// or tcp://).
 	SocketPath string
+	Runtime    string
 }
 
 func detectSocket() string {
-	if h := os.Getenv("DOCKER_HOST"); h != "" {
-		return h
-	}
 	candidates := []string{
 		"/var/run/docker.sock",
 		"/run/podman/podman.sock",
@@ -61,11 +59,26 @@ func clientForAddr(addr string) *Client {
 			},
 		},
 		SocketPath: addr,
+		Runtime:    RuntimeKind(addr),
+	}
+}
+
+func RuntimeKind(addr string) string {
+	a := strings.ToLower(addr)
+	switch {
+	case strings.Contains(a, "podman"):
+		return "podman"
+	case strings.Contains(a, "docker"):
+		return "docker"
+	case strings.HasPrefix(a, "tcp://"), strings.HasPrefix(a, "http://"):
+		return "tcp"
+	default:
+		return "runtime"
 	}
 }
 
 // NewClient creates a Client connected to the first available daemon socket.
-// The socket is resolved from DOCKER_HOST, then common socket paths.
+// The socket is resolved from common local Docker and Podman socket paths.
 func NewClient() *Client {
 	return clientForAddr(detectSocket())
 }
