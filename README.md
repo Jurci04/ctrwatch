@@ -1,5 +1,9 @@
 # ctrwatch
 
+[![CI](https://github.com/Jurci04/ctrwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/Jurci04/ctrwatch/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Jurci04/ctrwatch)](https://github.com/Jurci04/ctrwatch/releases/latest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Jurci04/ctrwatch)](https://goreportcard.com/report/github.com/Jurci04/ctrwatch)
+
 `ctrwatch` is a small Go TUI for watching containers across local and
 SSH-reachable servers. It works with Docker, Podman, and other
 Docker-compatible runtime sockets.
