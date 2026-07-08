@@ -20,7 +20,7 @@ func TestShortID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := shortID(tt.id); got != tt.want {
+			if got := runtime.ShortID(tt.id); got != tt.want {
 				t.Fatalf("shortID = %q, want %q", got, tt.want)
 			}
 		})

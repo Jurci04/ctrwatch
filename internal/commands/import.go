@@ -129,7 +129,7 @@ func runningContainers() ([]string, error) {
 	}
 	names := make([]string, 0, len(containers))
 	for _, c := range containers {
-		names = append(names, containerName(c.Names))
+		names = append(names, runtime.ContainerName(c.Names))
 	}
 	return names, nil
 }
@@ -173,7 +173,7 @@ func kubeContainers(b []byte) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("import: %w", err)
 		}
-		names = appendKubeNames(names, doc.Spec, 0)
+		names = appendKubeNames(names, doc.Spec)
 	}
 	if len(names) == 0 {
 		return nil, fmt.Errorf("import: no kube containers")
@@ -181,20 +181,17 @@ func kubeContainers(b []byte) ([]string, error) {
 	return names, nil
 }
 
-func appendKubeNames(names []string, spec kubeSpec, depth int) []string {
-	if depth > 4 {
-		return names
-	}
+func appendKubeNames(names []string, spec kubeSpec) []string {
 	for _, c := range spec.Containers {
 		if c.Name != "" {
 			names = append(names, c.Name)
 		}
 	}
 	if spec.Template != nil {
-		names = appendKubeNames(names, spec.Template.Spec, depth+1)
+		names = appendKubeNames(names, spec.Template.Spec)
 	}
 	if spec.JobTemplate != nil && spec.JobTemplate.Spec.Template != nil {
-		names = appendKubeNames(names, spec.JobTemplate.Spec.Template.Spec, depth+1)
+		names = appendKubeNames(names, spec.JobTemplate.Spec.Template.Spec)
 	}
 	return names
 }

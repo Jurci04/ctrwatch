@@ -8,9 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"ctrwatch/internal/config"
 	"ctrwatch/internal/runtime"
-	"ctrwatch/internal/ssh"
 )
 
 // RunPS lists containers in a formatted table.
@@ -36,7 +34,7 @@ func RunPS(args []string) error {
 		return err
 	}
 
-	PrintContainers(containers, client.SocketPath)
+	printContainers(containers, client.SocketPath)
 	return nil
 }
 
@@ -52,22 +50,14 @@ func formatPorts(ports []runtime.Port) string {
 	return strings.Join(parts, ", ")
 }
 
-func containerName(names []string) string {
-	if len(names) == 0 {
-		return "-"
-	}
-	return strings.TrimPrefix(names[0], "/")
-}
-
-// PrintContainers prints a formatted table of containers to stdout.
-func PrintContainers(containers []runtime.Container, socketPath string) {
+func printContainers(containers []runtime.Container, socketPath string) {
 	fmt.Printf("# socket: %s\n", socketPath)
 	fmt.Printf("%-20s %-20s %-30s %-12s %-20s %v\n", "ID", "NAME", "IMAGE", "STATE", "STATUS", "PORTS")
 	for _, container := range containers {
 		fmt.Printf(
 			"%-20s %-20s %-30s %-12s %-20s %v\n",
-			shortID(container.ID),
-			containerName(container.Names),
+			runtime.ShortID(container.ID),
+			runtime.ContainerName(container.Names),
 			container.Image,
 			container.State,
 			container.Status,
@@ -77,44 +67,25 @@ func PrintContainers(containers []runtime.Container, socketPath string) {
 }
 
 func psFromConfig(tag string, all bool) error {
-	matched, err := resolveTaggedServers(tag)
+	defs, cleanup, err := resolveTagged(tag)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 
-	var cleanups []func()
-	defer func() {
-		for _, f := range cleanups {
-			f()
-		}
-	}()
+	byClient := map[*runtime.Client][]string{}
+	for _, d := range defs {
+		byClient[d.Client] = append(byClient[d.Client], d.Name)
+	}
 
-	for _, s := range matched {
-		label := s.Host
-		if config.IsLocalHost(label) {
-			label = "localhost"
-		}
-
-		var client *runtime.Client
-		if config.IsLocalHost(s.Host) {
-			client = runtime.NewClient()
-		} else {
-			localSock, cleanup, err := ssh.Tunnel(s.Host, s.Socket)
-			if err != nil {
-				return err
-			}
-			cleanups = append(cleanups, cleanup)
-			client = runtime.NewClientForSocket(localSock)
-		}
-
+	for client, names := range byClient {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
 		containers, err := client.ListContainers(ctx, all)
 		if err != nil {
-			return fmt.Errorf("%s: %w", label, err)
+			return fmt.Errorf("%s: %w", client.SocketPath, err)
 		}
-		PrintContainers(filterContainers(containers, s.Containers), client.SocketPath)
+		printContainers(filterContainers(containers, names), client.SocketPath)
 	}
 	return nil
 }
@@ -137,9 +108,4 @@ func filterContainers(containers []runtime.Container, names []string) []runtime.
 	return filtered
 }
 
-func shortID(id string) string {
-	if len(id) > 12 {
-		return id[:12]
-	}
-	return id
-}
+

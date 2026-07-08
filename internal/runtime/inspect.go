@@ -79,3 +79,55 @@ func (client *Client) InspectContainer(ctx context.Context, containerID string) 
 
 	return &info, nil
 }
+
+type Change struct {
+	Path string `json:"Path"`
+	Kind int    `json:"Kind"`
+}
+
+type TopResponse struct {
+	Titles    []string   `json:"Titles"`
+	Processes [][]string `json:"Processes"`
+}
+
+func (client *Client) DiffContainer(ctx context.Context, containerID string) ([]Change, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("http://localhost/containers/%s/changes", containerID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("diff %s: %s", containerID, resp.Status)
+	}
+	var changes []Change
+	if err := json.NewDecoder(resp.Body).Decode(&changes); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return changes, nil
+}
+
+func (client *Client) TopContainer(ctx context.Context, containerID string) (*TopResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("http://localhost/containers/%s/top", containerID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("top %s: %s", containerID, resp.Status)
+	}
+	var top TopResponse
+	if err := json.NewDecoder(resp.Body).Decode(&top); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return &top, nil
+}

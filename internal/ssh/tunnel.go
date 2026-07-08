@@ -3,11 +3,9 @@ package ssh
 import (
 	"bytes"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -21,7 +19,13 @@ func Tunnel(host, remoteSocket string) (localSocket string, cleanup func(), err 
 	if _, err := exec.LookPath("ssh"); err != nil {
 		return "", nil, fmt.Errorf("ssh not found in PATH")
 	}
-	localSocket = filepath.Join(os.TempDir(), fmt.Sprintf("ctrwatch-%d.sock", rand.Int63()))
+	f, err := os.CreateTemp("", "ctrwatch-*.sock")
+	if err != nil {
+		return "", nil, fmt.Errorf("temp socket: %w", err)
+	}
+	localSocket = f.Name()
+	f.Close()
+	os.Remove(localSocket)
 	cmd := exec.Command("ssh",
 		"-L", localSocket+":"+remoteSocket,
 		"-N", host,

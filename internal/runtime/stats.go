@@ -7,20 +7,26 @@ import (
 	"net/http"
 )
 
-// ContainerStats holds CPU and memory metrics for a container.
 type ContainerStats struct {
 	CPUPercent  float64
 	MemoryUsage uint64
 	MemoryLimit uint64
-	// Status is populated by the caller from the inspect endpoint.
-	// The stats API does not provide this field directly.
-	Status string
+	Status      string
+	Uptime      string
+	PIDsCurrent uint64
+	NetRxBytes  uint64
+	NetTxBytes  uint64
+	BlkReadBytes uint64
+	BlkWriteBytes uint64
 }
 
 type statsJSON struct {
 	CPUStats    cpuStats    `json:"cpu_stats"`
 	PreCPUStats cpuStats    `json:"precpu_stats"`
 	MemoryStats memoryStats `json:"memory_stats"`
+	PIDsStats   pidsStats   `json:"pids_stats"`
+	BlkioStats  blkioStats  `json:"blkio_stats"`
+	Networks    map[string]netStats `json:"networks"`
 }
 
 type cpuStats struct {
@@ -38,7 +44,24 @@ type memoryStats struct {
 	Limit uint64 `json:"limit"`
 }
 
-// StatsContainer fetches a one-shot CPU and memory snapshot for a container.
+type pidsStats struct {
+	Current uint64 `json:"current"`
+}
+
+type blkioStats struct {
+	IOServiceBytesRecursive []blkioEntry `json:"io_service_bytes_recursive"`
+}
+
+type blkioEntry struct {
+	Op    string `json:"op"`
+	Value uint64 `json:"value"`
+}
+
+type netStats struct {
+	RxBytes uint64 `json:"rx_bytes"`
+	TxBytes uint64 `json:"tx_bytes"`
+}
+
 func (client *Client) StatsContainer(ctx context.Context, containerID string) (*ContainerStats, error) {
 	req, err := http.NewRequestWithContext(
 		ctx,
@@ -46,7 +69,6 @@ func (client *Client) StatsContainer(ctx context.Context, containerID string) (*
 		fmt.Sprintf("http://localhost/containers/%s/stats?stream=false", containerID),
 		nil,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -74,9 +96,30 @@ func (client *Client) StatsContainer(ctx context.Context, containerID string) (*
 		cpuPercent = (float64(cpuDelta) / float64(systemDelta)) * float64(raw.CPUStats.OnlineCPUs) * 100
 	}
 
+	var netRx, netTx uint64
+	for _, iface := range raw.Networks {
+		netRx += iface.RxBytes
+		netTx += iface.TxBytes
+	}
+
+	var blkRead, blkWrite uint64
+	for _, e := range raw.BlkioStats.IOServiceBytesRecursive {
+		switch e.Op {
+		case "read":
+			blkRead += e.Value
+		case "write":
+			blkWrite += e.Value
+		}
+	}
+
 	return &ContainerStats{
-		CPUPercent:  cpuPercent,
-		MemoryUsage: raw.MemoryStats.Usage,
-		MemoryLimit: raw.MemoryStats.Limit,
+		CPUPercent:   cpuPercent,
+		MemoryUsage:  raw.MemoryStats.Usage,
+		MemoryLimit:  raw.MemoryStats.Limit,
+		PIDsCurrent:  raw.PIDsStats.Current,
+		NetRxBytes:   netRx,
+		NetTxBytes:   netTx,
+		BlkReadBytes: blkRead,
+		BlkWriteBytes: blkWrite,
 	}, nil
 }

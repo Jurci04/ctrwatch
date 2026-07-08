@@ -2,197 +2,140 @@
 
 ## Summary
 
-Make `ctrwatch` TUI-first without removing the direct CLI commands. Running
-`ctrwatch` should open an interactive container dashboard by default, while
-`ps`, `logs`, `watch`, `inspect`, `stats`, `import`, and `config check` stay
-available for scripts and quick terminal use.
+`ctrwatch` is a container monitor — it watches containers, not processes or
+sessions. The TUI is the default entrypoint, direct CLI commands stay available
+for scripting.
 
-The TUI should use containers from `$CTRWATCH_CONFIG`, `ctrwatch.yaml`, or
-`settings.yaml`, then let users navigate containers and open the same data now
-available through the direct commands.
+## Completed
 
-## Phase 1: Default TUI
+### Phase 1: Default TUI
 
-Goal: make the app feel interactive by default while keeping every existing
-command stable.
+- `ctrwatch` with no args opens the TUI.
+- Loads configured containers from `ctrwatch.yaml` (first tag). Falls back to
+  empty TUI with helpful message when no config exists.
+- Auto-detects local Docker/Podman containers on startup.
+- `ctrwatch help` still prints usage. All direct commands unchanged.
 
-- Change `main.go` so `ctrwatch` with no args calls the same path as
-  `ctrwatch watch`.
-- Keep `ctrwatch help` as the way to print usage.
-- Keep `ctrwatch ps`, `logs`, `watch`, `inspect`, `stats`, `import`, and
-  `config check` working exactly as explicit commands.
-- Add a small command entrypoint such as `RunDefaultTUI()` if calling
-  `RunWatch(nil)` would make config/default behavior unclear.
-- Load containers from config by default. Use the first configured tag or a
-  simple default tag such as `dev`; if that is too surprising, start with all
-  local configured containers.
-- Preserve explicit `@tag` support so `ctrwatch watch @prod` and later
-  `ctrwatch @prod` can open a scoped dashboard.
-- Show plain TUI empty states for:
-  - no config file found
-  - config exists but no matching containers
-  - runtime/socket connection error
+### Phase 2: TUI Navigation And Views
 
-Tests:
+- Seven switchable views: logs, ps, inspect, stats, diff, top, servers.
+- `←`/`→` switch views, `↑`/`↓` cycle containers, `enter` focuses, `esc` backs
+  out. `s` jumps to servers view. `d` toggles container log panel.
+- Context-aware footer shows relevant keybindings per view.
+- All views share the same bordered-panel style (`╭─ title ─╮`) for visual
+  consistency.
+- View tests for PS table, inspect metadata, stats table, view switching, empty
+  state, and focused/esc behavior.
 
-- Add a small test around the default container resolution helper, not around
-  `main` or `os.Exit`.
-- Keep command dispatch manual unless `main` is refactored to return an exit
-  code.
-- Run `go test ./...`.
+### Phase 3: Shared Data Paths
 
-## Phase 2: TUI Navigation And Views
+- TUI model owns `[]*runtime.Client` and fetches data on demand via `tea.Cmd`.
+- Log streaming and stats polling goroutines live in the model.
+- Multiple servers supported simultaneously via SSH tunnels.
 
-Goal: make the TUI a dashboard, not just a split log viewer.
+### Phase 4: Runtime Confidence
 
-- Keep `internal/tui.Model` as the owner of navigation state.
-- Add a selected container index and selected view. Suggested views:
-  - `logs`
-  - `ps`
-  - `inspect`
-  - `stats`
-- Use a left container list when width allows; fall back to a compact header on
-  narrow terminals.
-- Keyboard behavior:
-  - `up` / `down`: move selected container
-  - `left` / `right`: switch view
-  - `tab` / `shift+tab`: switch view
-  - `enter`: focus/unfocus current view
-  - `esc`: leave focus or return to the overview
-  - `q` / `ctrl+c`: quit
-- Logs view can start with the current behavior: buffered log lines per
-  container, sanitized and colorized.
-- Ps view should show the selected container plus nearby configured containers
-  in a compact table: name, short ID if known, image, state, status, ports.
-- Inspect view should show the selected container's image, status, created time,
-  restart count, ports, mounts, labels, and env count. Do not dump huge env
-  values by default.
-- Stats view should show CPU, memory usage, memory limit, and last refresh/error.
-- Add loading and error rows per container instead of failing the whole TUI.
+- Runtime client supports TCP (`tcp://`, `http://`) in addition to Unix sockets.
+- Mock E2E tests run against both TCP and Unix socket transports (32+ tests).
+- Real-container integration tests (`CTRWATCH_INTEGRATION=1`) work with Docker
+  and Podman.
+- `DOCKER_HOST` environment variable fully supported for any Docker-compatible
+  runtime.
 
-Tests:
+### Phase 5: Views Expansion
 
-- Add `Model.Update` tests for arrow navigation and view switching.
-- Add `View()` tests for no overlap, stable height, selected container marker,
-  and focused view behavior.
-- Keep tests string-based; do not require a real terminal.
+- **Container diff / changes view**: filesystem changes since container start.
+- **Container top / processes view**: running processes inside a container.
+- **Historical stats sparkline**: last N CPU samples rendered as ASCII sparkline
+  in the stats view.
 
-## Phase 3: Shared Data Paths
+### Phase 6: Server Browser
 
-Goal: avoid copying command logic into the TUI.
+- Config file servers listed in a dedicated view.
+- Press enter to SSH-connect to a server and browse its containers.
+- Multiple servers can be connected simultaneously.
+- Local containers always auto-detected on startup.
 
-- Keep `internal/runtime` as the low-level Docker-compatible API client.
-- Keep `internal/commands` responsible for flags, args, stdout/stderr, and SSH
-  cleanup.
-- Let the TUI receive data structs, not formatted command output.
-- Extract small helpers only when both CLI and TUI need them:
-  - container resolution from args/config
-  - list/filter containers
-  - inspect one container
-  - stats for one container
-  - log streaming options
-- Do not shell out from the TUI to run `ctrwatch ps`, `inspect`, or `stats`.
-- Prefer tiny structs over a broad service abstraction until a second real
-  caller needs one.
-- Keep formatting split:
-  - CLI formats terminal text tables.
-  - TUI formats panels and rows.
+### Phase 7: UI/UX Polish
 
-Implementation shape:
+- Keyword-only log coloring (not whole-line red).
+- Unified `●` marker across all views.
+- Removed `watch` command (redundant with default TUI).
+- Simplified keybindings (removed ctrl+c, space, tab, a).
+- Context-aware key hints in footer.
+- Consistent bordered panel style for all views.
 
-- First, make `watch` collect list/inspect/stats data in goroutines and send
-  typed messages into the model.
-- Then reuse the same helpers from CLI commands if duplication appears.
-- Do not introduce a runtime interface just for tests; fake `http.RoundTripper`
-  already covers runtime unit tests.
+## Next
 
-Tests:
+Ranked by expected value-to-effort ratio.
 
-- Keep runtime API tests on fake HTTP responses.
-- Add command-helper tests only for behavior shared by CLI and TUI.
-- Avoid subprocess tests for command output unless formatting becomes important.
+### 1. Thorough Testing
 
-## Phase 4: Runtime Confidence
+Run a full TUI session with real containers to verify all views render
+correctly. Check edge cases: empty states, SSH disconnect, resize, rapid
+navigation.
 
-Goal: make Podman a verified target without making normal tests flaky.
+### 2. Container Name/ID Filter Across All Views
 
-- Keep Docker-compatible Engine API support as the current core.
-- Add opt-in Podman integration tests behind `CTRWATCH_INTEGRATION=1`.
-- Detect common Podman sockets:
-  - `/run/podman/podman.sock`
-  - `/run/user/$UID/podman/podman.sock`
-- Skip integration tests when the env var is missing or no socket exists.
-- Test only stable behavior:
-  - client can list containers
-  - inspect works for a known container when a test container name is provided
-  - stats returns a response or a clear runtime error
-- Do not start or stop containers from tests at first. That is useful later, but
-  it makes the first Podman check too invasive.
-- Add README notes for verified Docker/Podman behavior and best-effort
-  Docker-compatible runtimes.
+Type `/` in the TUI to filter the container list by name or ID substring.
+Filter applies across all views — only matching containers appear in PS,
+stats, diff, etc. Makes the tool usable with dozens of containers.
 
-Suggested env vars:
+Effort: medium (input mode, incremental filter, clear on esc).
+Tests: model update tests for filter state.
 
-- `CTRWATCH_INTEGRATION=1`
-- `CTRWATCH_PODMAN_SOCKET=/run/user/1000/podman/podman.sock`
-- `CTRWATCH_TEST_CONTAINER=name`
+### 3. Event Stream View
 
-Tests:
+Subscribe to the Docker Events API (`GET /events`) and show a rolling feed
+of container lifecycle events (start, stop, die, health_status, etc.).
 
-- Normal: `go test ./...`
-- Integration: `CTRWATCH_INTEGRATION=1 go test ./internal/runtime -run Podman`
+Effort: medium (new runtime method + streaming view).
+Tests: mock server emits timed events.
 
-## Phase 5: More Runtime Backends
+### 4. Export inspect / stats as JSON
 
-Goal: support more runtimes without abstracting too early.
+Add `--json` flag to `inspect` and `stats` commands for pipeable machine-readable
+output. Useful for feeding into `jq` or other tools.
 
-- Do not add a runtime provider interface until the first non-Docker-compatible
-  backend is actually being implemented.
-- Keep Docker and Podman on the current Docker-compatible client.
-- When adding a non-compatible backend, introduce the smallest provider shape
-  the TUI needs:
-  - list containers
-  - stream logs
-  - inspect container
-  - get stats when supported
-- Start with read-only support. Avoid start/stop/restart actions until the TUI
-  read path is solid.
-- Recommended order:
-  1. containerd / nerdctl, because it is closest to current container workflows
-  2. Kubernetes contexts and namespaces
-  3. LXC / LXD
-  4. Nomad
-- Keep unsupported runtimes out of config examples until there is working code
-  and at least one test path.
+Effort: trivial (conditional JSON encoding).
+Tests: capture and validate JSON output.
 
-Tests:
+### 5. Multiple socket/config profiles
 
-- Unit-test each provider with fake clients or sample payloads.
-- Add integration tests only behind explicit env vars.
-- Keep the default test suite daemon-free.
+Support `--config <path>` flag so users can quickly switch between projects
+or environments without editing `ctrwatch.yaml`.
 
-## Cleanup Backlog
+Effort: small (add flag, pass through config path).
+Tests: test flag overrides env var.
 
-- Keep tests small, package-local, and deterministic.
-- Avoid subprocess tests for simple command wrappers.
-- Avoid daemon, SSH, or terminal requirements in normal unit tests.
-- Add focused TUI tests for navigation, view switching, selected container
-  behavior, and empty states.
-- Review `go.mod` so directly imported packages are declared intentionally.
-- Remove duplicated formatting only when a TUI feature needs shared data.
-- Consider splitting `internal/tui/model.go` after Phase 2 if it becomes hard to
-  scan:
-  - `model.go` for state and update logic
-  - `view.go` for rendering
-  - `messages.go` for TUI message types
-- Keep this split optional; do it only when the file is painful to edit.
+### 6. Health check view
+
+Show container health status from inspect (when `Healthcheck` is configured).
+Highlight unhealthy containers in the PS view and TUI.
+
+Effort: small (parse health field, add color).
+Tests: mock inspect includes health data.
+
+### 7. Table column sorting in PS view
+
+Click or key-triggered sort by name, status, CPU, memory, etc. in the TUI
+PS view.
+
+Effort: medium (sort state, key bindings).
+Tests: sort order unit tests.
+
+## Not planned
+
+- **Lifecycle management** (`start`, `stop`, `restart`, `compose up/down`).
+  Docker Compose and `docker` CLI already do this. ctrwatch stays read-only.
+- **Non-container monitoring** (tmux sessions, cron jobs, systemd units).
+  Out of scope. Use dedicated tools for those domains.
+- **Configurable refresh intervals**. Hard-coded 10s is fine; YAGNI until
+  someone asks.
 
 ## Acceptance Criteria
 
-- `ctrwatch` opens the TUI by default.
-- Existing direct commands still work.
-- The TUI can navigate configured containers and show logs, ps/table, inspect,
-  and stats without leaving the app.
 - `go test ./...` passes.
-- Podman real-runtime checks are opt-in and skipped by default.
+- `./test/e2e/run.sh` passes (zero runtime dependencies).
+- `CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh` passes with Docker or Podman.
 - Normal tests do not require Docker, Podman, SSH, or a real terminal.

@@ -40,3 +40,5 @@ ctrwatch
 # Editor/IDE
 # .idea/
 # .vscode/
+
+logs/

@@ -1,11 +1,12 @@
 # ctrwatch
 
-`ctrwatch` is a small Go CLI/TUI for watching containers.
-It works with Docker, Podman, and other Docker-compatible runtime sockets.
+`ctrwatch` is a small Go TUI for watching containers. It works with Docker,
+Podman, and other Docker-compatible runtime sockets.
 
-Use it for quick container lists, streaming logs, split-screen log watching,
-metadata inspection, one-shot stats, and tagged groups of local or remote
-containers.
+Run `ctrwatch` with no arguments to open the TUI — it auto-detects local
+containers and lets you browse logs, inspect metadata, view stats, diff
+filesystem changes, see running processes, and connect to remote servers
+via SSH.
 
 ## Install
 
@@ -28,66 +29,52 @@ go build -o bin/ctrwatch .
 ## Requirements
 
 - Linux
-- Docker, Podman, or another Docker-compatible runtime socket (for now, support for others will be added in the future)
+- Docker, Podman, or another Docker-compatible runtime socket
 - Access to the runtime socket
 - `ssh` for remote hosts
 
 ## Quick Start
 
 ```bash
+ctrwatch
+```
+
+Opens the TUI with all detected local containers. Use arrow keys to navigate,
+`enter` to focus a container, and `←`/`→` to switch between views.
+
+CLI commands are also available for scripting:
+
+```bash
 ctrwatch ps
-ctrwatch watch api worker
 ctrwatch logs --tail 200 api
 ctrwatch inspect api
 ctrwatch stats api worker
-```
-
-Use a configured tag:
-
-```bash
-ctrwatch ps @dev
-ctrwatch watch @prod
-```
-
-Import local container names into config:
-
-```bash
-ctrwatch import compose.yaml --tag dev
-ctrwatch import --from-running --tag dev
-```
-
-## Commands
-
-```text
-ctrwatch ps [--all] [@tag]
-ctrwatch logs [--tail N] [--since DURATION] <container>... | @tag
-ctrwatch watch [--tail N] [--since DURATION] <container>... | @tag
-ctrwatch inspect <container> | @tag
-ctrwatch stats <container>... | @tag
-ctrwatch import [--tag TAG] [file]
-ctrwatch import --from-running
 ctrwatch config check
-ctrwatch help
 ```
 
-## Watch TUI
+## TUI
 
-`watch` opens a terminal UI for live logs and CPU/memory stats:
+Seven views, switchable with `←`/`→`:
 
-```bash
-ctrwatch watch @prod-workers
-```
+| View | Description |
+|------|-------------|
+| Logs | Live log output, split-screen for focused container |
+| PS | Container list with name, ID, image, state, status |
+| Inspect | Container metadata — overview, mounts, config, ports |
+| Stats | CPU/memory per container with sparkline history |
+| Diff | Filesystem changes since container start |
+| Top | Running processes inside container |
+| Servers | Browse and connect to remote servers from config |
 
 Keys:
 
-- `tab` / arrows: select container
-- `enter` / space: focus selected container
-- `a`: show all containers
-- `q` / `esc` / `ctrl+c`: quit
-
-The planned next step is a TUI-first dashboard where running `ctrwatch` opens
-the TUI by default and the TUI can navigate logs, ps/table, inspect, and stats
-views. See [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md).
+- `↑`/`↓`: select container
+- `←`/`→`: switch view
+- `enter`: focus/unfocus selected container
+- `esc`: unfocus / clear filter
+- `s`: jump to servers view
+- `d`: toggle container log panel
+- `q`: quit
 
 ## Config
 
@@ -118,7 +105,7 @@ Containers can also specify a socket directly:
 ```bash
 ctrwatch logs api@/run/podman/podman.sock worker
 ctrwatch logs api@unix:///run/podman/podman.sock
-ctrwatch watch api@/var/run/docker.sock worker@/run/podman/podman.sock
+ctrwatch stats api@/var/run/docker.sock worker@/run/podman/podman.sock
 ```
 
 Socket resolution order:
@@ -183,6 +170,12 @@ Check coverage:
 go test ./... -cover
 ```
 
+E2E tests (no runtime dependencies):
+
+```bash
+./test/e2e/run.sh
+```
+
 Normal tests should stay daemon-free, SSH-free, fast, and deterministic.
 
 ## Contributing
@@ -202,11 +195,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 
 ## Roadmap
 
-See [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md) for the implementation
-plan. The main direction is:
+See [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md) for the full
+implementation plan. The main direction is:
 
-- make the TUI the default interactive entrypoint
-- keep direct CLI commands for scripting
-- add TUI views for logs, ps/table, inspect, and stats
+- make the TUI the default interactive entrypoint (done)
+- keep direct CLI commands for scripting (done)
+- add TUI views for logs, ps, inspect, stats, diff, top, servers (done)
+- add filter across all views (next)
 - verify Podman with opt-in integration tests
 - add more runtime backends only when there is a concrete implementation path

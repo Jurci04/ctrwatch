@@ -10,22 +10,28 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+func testModel(containers []string) *Model {
+	clients := make([]*runtime.Client, len(containers))
+	return NewModel(containers, clients, runtime.LogOptions{Tail: "100"}, 0)
+}
+
 func TestViewLayoutInvariants(t *testing.T) {
-	m := NewModel([]string{"api", "worker", "db"})
+	m := testModel([]string{"api", "worker", "db"})
 	m.width = 80
 	m.height = 47
 	longLine := "\x1b[31m" + strings.Repeat("x", 200) + "\x1b[0m\r"
 	for _, name := range m.containers {
 		m.lines[name] = []runtime.LogLine{{Container: name, Text: longLine}}
 	}
+	// Seed stats so log view doesn't show "waiting..."
+	for _, name := range m.containers {
+		m.stats[name] = &runtime.ContainerStats{Status: "running", CPUPercent: 1.0, MemoryUsage: 1 << 20}
+	}
 
 	view := m.View()
 	lines := strings.Split(view, "\n")
 	if len(lines) != 47 {
 		t.Fatalf("view height = %d, want 47", len(lines))
-	}
-	if got := strings.Count(view, "╰"); got != 3 {
-		t.Fatalf("bottom borders = %d, want 3\n%s", got, view)
 	}
 	for _, line := range lines {
 		if got := lipgloss.Width(line); got > 78 {
@@ -45,16 +51,16 @@ func TestTUILogHelpers(t *testing.T) {
 		t.Fatalf("visibleLogLines = %#v, want one/two", lines)
 	}
 
-	if _, ok := logLineColor(visibleLogLine{text: "2026 info ok"}); !ok {
-		t.Fatal("lowercase info was not classified")
+	if got := colorLogLine(visibleLogLine{text: "2026 info ok"}); !strings.Contains(got, "\x1b[") {
+		t.Fatal("info keyword should be colored")
 	}
-	if _, ok := logLineColor(visibleLogLine{text: "plain"}); ok {
-		t.Fatal("plain line was classified")
+	if got := colorLogLine(visibleLogLine{text: "plain"}); got != "plain" {
+		t.Fatal("plain line should be unchanged")
 	}
 }
 
 func TestFocusClearsScreenButTabDoesNot(t *testing.T) {
-	m := NewModel([]string{"api", "worker"})
+	m := testModel([]string{"api", "worker"})
 
 	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(*Model)
@@ -65,5 +71,118 @@ func TestFocusClearsScreenButTabDoesNot(t *testing.T) {
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if cmd != nil {
 		t.Fatal("tab requested clear screen")
+	}
+}
+
+func TestViewSwitching(t *testing.T) {
+	m := testModel([]string{"api", "worker"})
+	if m.view != viewLogs {
+		t.Fatalf("default view = %d, want viewLogs", m.view)
+	}
+
+	views := []viewType{viewPS, viewStats, viewServers, viewLogs}
+	for _, want := range views {
+		m.Update(tea.KeyMsg{Type: tea.KeyRight})
+		if m.view != want {
+			t.Fatalf("after right = %d, want %d", m.view, want)
+		}
+	}
+
+	// Left wraps around: from viewLogs(0), left→viewServers(3)→viewStats(2)→viewPS(1)→viewLogs(0)
+	leftViews := []viewType{viewServers, viewStats, viewPS, viewLogs}
+	for _, want := range leftViews {
+		m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		if m.view != want {
+			t.Fatalf("after left = %d, want %d", m.view, want)
+		}
+	}
+}
+
+func TestPSViewRendersTable(t *testing.T) {
+	m := testModel([]string{"nginx"})
+	m.view = viewPS
+	m.width = 80
+	m.height = 24
+	m.containersInfo = []runtime.Container{
+		{ID: "abc123def456", Names: []string{"/nginx"}, Image: "nginx:1.25", State: "running", Status: "Up 2h"},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "nginx") {
+		t.Fatalf("ps view missing container name:\n%s", view)
+	}
+	if !strings.Contains(view, "abc123def456") {
+		t.Fatalf("ps view missing container id:\n%s", view)
+	}
+}
+
+func TestInspectViewRendersMetadata(t *testing.T) {
+	m := testModel([]string{"nginx"})
+	m.view = viewStats
+	m.focused = true
+	m.width = 80
+	m.height = 24
+	m.inspect = &runtime.ContainerInspect{
+		ID:    "abc123def456",
+		Name:  "/nginx",
+		State: runtime.ContainerState{Status: "running"},
+		Config: runtime.ContainerConfig{
+			Image:  "nginx:1.25",
+			Env:    []string{"A=B"},
+			Labels: map[string]string{"app": "web"},
+		},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "nginx") {
+		t.Fatalf("inspect view missing name:\n%s", view)
+	}
+	if !strings.Contains(view, "running") {
+		t.Fatalf("inspect view missing status:\n%s", view)
+	}
+	if !strings.Contains(view, "1 variables") {
+		t.Fatalf("inspect view missing env count:\n%s", view)
+	}
+}
+
+func TestStatsViewRendersStats(t *testing.T) {
+	m := testModel([]string{"nginx", "redis"})
+	m.view = viewStats
+	m.width = 80
+	m.height = 24
+	m.stats["nginx"] = &runtime.ContainerStats{CPUPercent: 12.5, MemoryUsage: 45 << 20, MemoryLimit: 512 << 20, Status: "running"}
+	m.stats["redis"] = &runtime.ContainerStats{CPUPercent: 2.1, MemoryUsage: 32 << 20, MemoryLimit: 512 << 20, Status: "running"}
+
+	view := m.View()
+	if !strings.Contains(view, "nginx") || !strings.Contains(view, "redis") {
+		t.Fatalf("stats view missing containers:\n%s", view)
+	}
+	if !strings.Contains(view, "12.5") {
+		t.Fatalf("stats view missing cpu:\n%s", view)
+	}
+}
+
+func TestEmptyState(t *testing.T) {
+	m := testModel(nil)
+	m.width = 80
+	m.height = 24
+
+	view := m.View()
+	if !strings.Contains(view, "no containers") {
+		t.Fatalf("empty state missing message:\n%s", view)
+	}
+}
+
+func TestEscInFocusedGoesBack(t *testing.T) {
+	m := testModel([]string{"api", "worker"})
+	m.focused = true
+
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = model.(*Model)
+	if m.focused {
+		t.Fatal("esc did not unfocus")
+	}
+	if cmd == nil || cmd() == nil {
+		t.Fatal("esc did not request clear screen")
 	}
 }

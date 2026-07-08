@@ -64,7 +64,7 @@ func RunLogs(args []string) error {
 				}
 			}
 
-			if err := readStreamError(errs); err != nil {
+			if err := runtime.ReadStreamError(errs); err != nil {
 				select {
 				case mergedErrors <- err:
 				case <-ctx.Done():
@@ -83,7 +83,7 @@ func RunLogs(args []string) error {
 		select {
 		case line, ok := <-mergedLines:
 			if !ok {
-				return readStreamError(mergedErrors)
+				return runtime.ReadStreamError(mergedErrors)
 			}
 			fmt.Printf("[%-20s] %s\n", line.Container, line.Text)
 
@@ -98,12 +98,4 @@ func RunLogs(args []string) error {
 	}
 }
 
-// readStreamError reads a single value from the error channel.
-// The runtime sends at most one error per stream.
-func readStreamError(errs <-chan error) error {
-	err, ok := <-errs
-	if !ok || err == nil {
-		return nil
-	}
-	return err
-}
+

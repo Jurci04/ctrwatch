@@ -4,13 +4,27 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Config defines the YAML structure for remote server definitions.
 type Config struct {
-	Servers []Server `yaml:"servers"`
+	Interval string   `yaml:"interval,omitempty"`
+	Servers  []Server `yaml:"servers"`
+}
+
+// PollInterval returns the configured polling interval or the default 10s.
+func (c *Config) PollInterval() time.Duration {
+	if c.Interval == "" {
+		return 10 * time.Second
+	}
+	d, err := time.ParseDuration(c.Interval)
+	if err != nil {
+		return 10 * time.Second
+	}
+	return d
 }
 
 // Server defines a single Docker/Podman endpoint and the containers to target.

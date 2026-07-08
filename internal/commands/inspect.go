@@ -2,20 +2,29 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"strings"
 	"time"
+
+	"ctrwatch/internal/runtime"
 )
 
 // RunInspect prints detailed metadata about a single container.
 func RunInspect(args []string) error {
-	containers, cleanup, err := resolveContainers(args)
+	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
+	jsonOut := fs.Bool("json", false, "output as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	containers, cleanup, err := resolveContainers(fs.Args())
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 	if len(containers) < 1 {
-		return fmt.Errorf("usage: ctrwatch inspect <container>")
+		return fmt.Errorf("usage: ctrwatch inspect [--json] <container>")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -27,8 +36,17 @@ func RunInspect(args []string) error {
 		return err
 	}
 
+	if *jsonOut {
+		b, err := json.MarshalIndent(info, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(b))
+		return nil
+	}
+
 	fmt.Printf("Name:      %s\n", strings.TrimPrefix(info.Name, "/"))
-	fmt.Printf("ID:        %s\n", shortID(info.ID))
+	fmt.Printf("ID:        %s\n", runtime.ShortID(info.ID))
 	fmt.Printf("Image:     %s\n", info.Config.Image)
 	fmt.Printf("Status:    %s\n", info.State.Status)
 	fmt.Printf("Created:   %s\n", info.Created.Format(time.RFC1123))
