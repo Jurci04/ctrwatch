@@ -62,10 +62,12 @@ func NewModel(containers []string, clients []*runtime.Client, opts runtime.LogOp
 		pollInterval = 10 * time.Second
 	}
 	names := append([]string(nil), containers...)
+	normalizedClients := make([]*runtime.Client, len(containers))
+	copy(normalizedClients, clients)
 	runtimes := make([]string, len(containers))
 	for i := range containers {
-		if i < len(clients) && clients[i] != nil {
-			runtimes[i] = clients[i].Runtime
+		if normalizedClients[i] != nil {
+			runtimes[i] = normalizedClients[i].Runtime
 		}
 		if runtimes[i] == "" {
 			runtimes[i] = "runtime"
@@ -76,7 +78,7 @@ func NewModel(containers []string, clients []*runtime.Client, opts runtime.LogOp
 		containers:        containers,
 		containerNames:    names,
 		containerRuntimes: runtimes,
-		clients:           clients,
+		clients:           normalizedClients,
 		lines:             make(map[string][]runtime.LogLine),
 		stats:             make(map[string]*runtime.ContainerStats),
 		disabled:          make(map[string]bool),
@@ -105,6 +107,9 @@ func (m *Model) LinesCh() chan<- []runtime.LogLine                  { return m.l
 func (m *Model) StatsCh() chan<- map[string]*runtime.ContainerStats { return m.statsCh }
 
 func (m *Model) clampSelected() {
+	if m.focused && (m.selected < 0 || m.selected >= len(m.containers)) {
+		m.focused = false
+	}
 	if m.view == viewServers {
 		if len(m.servers) == 0 {
 			m.selected = 0
@@ -115,6 +120,7 @@ func (m *Model) clampSelected() {
 	}
 	if len(m.containers) == 0 {
 		m.selected = 0
+		m.focused = false
 	} else if m.selected >= len(m.containers) {
 		m.selected = len(m.containers) - 1
 	}
@@ -422,7 +428,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.view == viewServers && len(m.servers) > 0 {
 				idx := m.selected
-				if idx < len(m.servers) && m.serverStatus[idx] != "connected" {
+				if idx < len(m.servers) && m.serverStatus[idx] == "" {
 					m.serverStatus[idx] = "connecting"
 					if idx < len(m.serverContainerStart) {
 						m.serverContainerStart[idx] = -1
@@ -536,6 +542,12 @@ func (m *Model) disconnectServer(srvIdx int) {
 	}
 	count := len(m.servers[srvIdx].Containers)
 	end := start + count
+	if start > len(m.containers) {
+		return
+	}
+	if end > len(m.containers) {
+		end = len(m.containers)
+	}
 
 	for _, name := range m.servers[srvIdx].Containers {
 		key := containerKey(runtime.RuntimeKind(m.servers[srvIdx].Socket), name)

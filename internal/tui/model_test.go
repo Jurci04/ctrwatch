@@ -246,3 +246,60 @@ func TestViewClampsServerSelectionWhenShowingContainers(t *testing.T) {
 		t.Fatalf("selected = %d, want 0", m.selected)
 	}
 }
+
+func TestViewClearsFocusWhenServerSelectionExceedsContainers(t *testing.T) {
+	servers := []config.Server{
+		{Host: "one", Containers: []string{"a"}},
+		{Host: "two", Containers: []string{"b"}},
+		{Host: "three", Containers: []string{"c"}},
+	}
+	m := NewModel([]string{"api"}, []*runtime.Client{runtime.NewClientForSocket("/var/run/docker.sock")}, runtime.LogOptions{}, 0, servers)
+	m.view = viewServers
+	m.focused = true
+	m.selected = 2
+	m.width = 80
+	m.height = 24
+
+	view := m.View()
+	if !strings.Contains(view, "servers") {
+		t.Fatalf("view missing servers header:\n%s", view)
+	}
+	if m.focused {
+		t.Fatal("focus should be cleared when selected is not a valid container")
+	}
+}
+
+func TestViewHandlesShortClientSlice(t *testing.T) {
+	m := NewModel([]string{"api", "worker"}, nil, runtime.LogOptions{}, 0)
+	m.view = viewPS
+	m.width = 80
+	m.height = 24
+	m.containersInfo = []runtime.Container{
+		{ID: "abc123def456", Names: []string{"/api"}, Image: "nginx:1.25", State: "running", Status: "Up"},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "api") {
+		t.Fatalf("view missing container:\n%s", view)
+	}
+}
+
+func TestDisconnectServerBoundsContainerSlices(t *testing.T) {
+	servers := []config.Server{{
+		Host:       "localhost",
+		Socket:     "/var/run/docker.sock",
+		Containers: []string{"api", "worker"},
+	}}
+	m := NewModel([]string{"api"}, []*runtime.Client{runtime.NewClientForSocket("/var/run/docker.sock")}, runtime.LogOptions{}, 0, servers)
+	m.serverStatus[0] = "connected"
+	m.serverContainerStart[0] = 0
+
+	m.disconnectServer(0)
+
+	if len(m.containers) != 0 {
+		t.Fatalf("containers = %#v, want empty", m.containers)
+	}
+	if len(m.clients) != 0 || len(m.containerNames) != 0 || len(m.containerRuntimes) != 0 {
+		t.Fatalf("parallel container slices not trimmed: clients=%d names=%d runtimes=%d", len(m.clients), len(m.containerNames), len(m.containerRuntimes))
+	}
+}
