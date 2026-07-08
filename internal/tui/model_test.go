@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"ctrwatch/internal/config"
 	"ctrwatch/internal/runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -184,5 +185,26 @@ func TestEscInFocusedGoesBack(t *testing.T) {
 	}
 	if cmd == nil || cmd() == nil {
 		t.Fatal("esc did not request clear screen")
+	}
+}
+
+func TestConnectLocalServerUsesConfiguredSocket(t *testing.T) {
+	servers := []config.Server{{
+		Host:       "localhost",
+		Socket:     "/run/user/1000/podman/podman.sock",
+		Containers: []string{"api"},
+	}}
+	m := NewModel(nil, nil, runtime.LogOptions{}, 0, servers)
+
+	msg := m.connectToServer(0)()
+	got, ok := msg.(serverConnectMsg)
+	if !ok {
+		t.Fatalf("msg = %#v", msg)
+	}
+	if got.err != nil {
+		t.Fatal(got.err)
+	}
+	if got.client.SocketPath != "unix:///run/user/1000/podman/podman.sock" {
+		t.Fatalf("socket = %q", got.client.SocketPath)
 	}
 }

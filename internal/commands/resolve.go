@@ -53,9 +53,10 @@ func resolveTagged(tag string) ([]containerDef, func(), error) {
 	for _, s := range matched {
 		var c *runtime.Client
 		if config.IsLocalHost(s.Host) {
-			c = runtime.NewClient()
+			c = runtime.NewClientForSocket(s.Socket)
 		} else {
-			if _, ok := clients[s.Host]; !ok {
+			key := s.Host + "\x00" + s.Socket
+			if _, ok := clients[key]; !ok {
 				localSock, cleanup, err := ssh.Tunnel(s.Host, s.Socket)
 				if err != nil {
 					for _, f := range cleanups {
@@ -65,9 +66,9 @@ func resolveTagged(tag string) ([]containerDef, func(), error) {
 				}
 				cleanups = append(cleanups, cleanup)
 				c = runtime.NewClientForSocket(localSock)
-				clients[s.Host] = c
+				clients[key] = c
 			} else {
-				c = clients[s.Host]
+				c = clients[key]
 			}
 		}
 		for _, name := range s.Containers {

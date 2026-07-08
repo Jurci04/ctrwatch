@@ -16,7 +16,8 @@ CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh
 ```
 
 Starts an Alpine container and runs ps/inspect/stats/logs/watch against it.
-Skips automatically when no runtime is detected.
+Skips automatically when no runtime is detected. Pass `--runtime docker` or
+`--runtime podman` to avoid auto-detection when both are installed.
 
 ## Podman
 
@@ -29,7 +30,7 @@ sudo apt install podman  # Debian/Ubuntu
 
 # Run with Podman socket
 DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock \
-  CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh
+  CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh --runtime podman
 ```
 
 The runtime client auto-detects Podman sockets at:

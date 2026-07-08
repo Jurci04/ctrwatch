@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # Real-container integration tests for ctrwatch.
 # Requires Docker or Podman runtime.
-# Usage: CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh [--binary ./ctrwatch]
+# Usage: CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh [--binary ./ctrwatch] [--runtime docker|podman]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BINARY="${BINARY:-$REPO_DIR/ctrwatch}"
+RUNTIME="${RUNTIME:-}"
 PASS=0
 FAIL=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --binary) BINARY="$2"; shift 2 ;;
+    --runtime) RUNTIME="$2"; shift 2 ;;
     *) echo "unknown: $1"; exit 1 ;;
   esac
 done
@@ -27,15 +29,24 @@ if [[ ! -x "$BINARY" ]]; then
   go build -o "$BINARY" "$REPO_DIR/."
 fi
 
-# Detect runtime
-RUNTIME=""
-if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
-  RUNTIME="docker"
-elif command -v podman &>/dev/null && podman info &>/dev/null 2>&1; then
-  RUNTIME="podman"
+if [[ -n "$RUNTIME" ]]; then
+  if [[ "$RUNTIME" != "docker" && "$RUNTIME" != "podman" ]]; then
+    echo "unknown runtime: $RUNTIME" >&2
+    exit 1
+  fi
+  if ! command -v "$RUNTIME" &>/dev/null || ! "$RUNTIME" info &>/dev/null 2>&1; then
+    echo "SKIP: $RUNTIME runtime unavailable" >&2
+    exit 0
+  fi
 else
-  echo "SKIP: no Docker or Podman runtime available" >&2
-  exit 0
+  if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+    RUNTIME="docker"
+  elif command -v podman &>/dev/null && podman info &>/dev/null 2>&1; then
+    RUNTIME="podman"
+  else
+    echo "SKIP: no Docker or Podman runtime available" >&2
+    exit 0
+  fi
 fi
 
 echo "=== Using runtime: $RUNTIME"

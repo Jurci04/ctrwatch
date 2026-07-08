@@ -2,9 +2,24 @@
 
 ## Summary
 
-`ctrwatch` is a container monitor — it watches containers, not processes or
-sessions. The TUI is the default entrypoint, direct CLI commands stay available
-for scripting.
+`ctrwatch` is an agentless, read-only container cockpit for people who watch
+containers across local and SSH-reachable servers. It should stay safe to run
+against production hosts: no server-side agent, no lifecycle actions by
+default, and no required database.
+
+The TUI is the default entrypoint for interactive triage. Direct CLI commands
+stay available for scripting.
+
+## Positioning
+
+- **Agentless remote access**: use the existing Docker/Podman socket through
+  local access or system `ssh`; do not require a daemon on the remote host.
+- **Read-only by default**: prioritize production-safe inspection over
+  container management.
+- **Multi-server triage**: make it obvious which server or container needs
+  attention before the user drills into logs, stats, inspect, diff, or top.
+- **Small tool, boring setup**: config should be easy to create, easy to read,
+  and compatible with normal SSH config aliases, keys, agents, and jump hosts.
 
 ## Completed
 
@@ -69,11 +84,20 @@ for scripting.
 
 Ranked by expected value-to-effort ratio.
 
-### 1. Thorough Testing
+### 1. SSH Reliability And Server State
 
-Run a full TUI session with real containers to verify all views render
-correctly. Check edge cases: empty states, SSH disconnect, resize, rapid
-navigation.
+Make remote monitoring reliable enough to leave open all day.
+
+- Track each server as `local`, `connected`, `connecting`, `reconnecting`, or
+  `failed`.
+- Surface the last SSH/runtime error in the servers view.
+- Auto-reconnect dropped SSH tunnels with bounded exponential backoff.
+- Keep stale container data visible while reconnecting, clearly marked stale.
+- Document that `host:` can be an SSH config alias, including `User`,
+  `IdentityFile`, `ProxyJump`, and agent-based auth.
+
+Effort: medium (server state model, reconnect command, visible status).
+Tests: model update tests for state transitions; mock failing reconnect path.
 
 ### 2. Container Name/ID Filter Across All Views
 
@@ -84,7 +108,20 @@ stats, diff, etc. Makes the tool usable with dozens of containers.
 Effort: medium (input mode, incremental filter, clear on esc).
 Tests: model update tests for filter state.
 
-### 3. Event Stream View
+### 3. Health And Problem Summary
+
+Show problems before details.
+
+- Parse container health status from inspect data.
+- Highlight unhealthy, restarting, exited, and stale containers in PS/stats.
+- Add a compact summary line or panel, e.g. `prod-api: 2 unhealthy, 1
+  restarting; homebox: reconnecting`.
+- Keep detailed logs/inspect/stats one keypress away.
+
+Effort: small to medium (status extraction and summary rendering).
+Tests: mock inspect/status data for unhealthy/restarting/stale cases.
+
+### 4. Event Stream View
 
 Subscribe to the Docker Events API (`GET /events`) and show a rolling feed
 of container lifecycle events (start, stop, die, health_status, etc.).
@@ -92,7 +129,19 @@ of container lifecycle events (start, stop, die, health_status, etc.).
 Effort: medium (new runtime method + streaming view).
 Tests: mock server emits timed events.
 
-### 4. Export inspect / stats as JSON
+### 5. First-run Config Setup
+
+When no config exists, help the user create one instead of only showing an
+empty state.
+
+- Add `ctrwatch config init` to write a minimal `ctrwatch.yaml`.
+- Add `ctrwatch config add <host> [--socket <path>] [--tag <tag>]`.
+- In the empty TUI, point to the exact command to add a local or SSH server.
+
+Effort: small (config write helpers, command wiring).
+Tests: temp-dir config write tests.
+
+### 6. Export inspect / stats as JSON
 
 Add `--json` flag to `inspect` and `stats` commands for pipeable machine-readable
 output. Useful for feeding into `jq` or other tools.
@@ -100,7 +149,7 @@ output. Useful for feeding into `jq` or other tools.
 Effort: trivial (conditional JSON encoding).
 Tests: capture and validate JSON output.
 
-### 5. Multiple socket/config profiles
+### 7. Multiple socket/config profiles
 
 Support `--config <path>` flag so users can quickly switch between projects
 or environments without editing `ctrwatch.yaml`.
@@ -108,15 +157,7 @@ or environments without editing `ctrwatch.yaml`.
 Effort: small (add flag, pass through config path).
 Tests: test flag overrides env var.
 
-### 6. Health check view
-
-Show container health status from inspect (when `Healthcheck` is configured).
-Highlight unhealthy containers in the PS view and TUI.
-
-Effort: small (parse health field, add color).
-Tests: mock inspect includes health data.
-
-### 7. Table column sorting in PS view
+### 8. Table column sorting in PS view
 
 Click or key-triggered sort by name, status, CPU, memory, etc. in the TUI
 PS view.
@@ -124,10 +165,32 @@ PS view.
 Effort: medium (sort state, key bindings).
 Tests: sort order unit tests.
 
+## Future Access And Runtime Sources
+
+Add new sources only when they preserve the core shape: no agent, read-only by
+default, and reuse credentials/config the user already has.
+
+Priority order:
+
+1. **Docker contexts**: discover or accept Docker contexts so users can reuse
+   existing SSH/TCP/TLS Docker endpoints.
+2. **Kubernetes contexts**: read pods, logs, status, restart counts, and events
+   through kubeconfig-compatible auth. Keep this as pod/container triage, not a
+   full Kubernetes dashboard.
+3. **Podman connections / podman machine**: Podman is already supported through
+   Docker-compatible sockets; add discovery for configured Podman connections
+   and common `podman machine` sockets.
+4. **Docker TCP/TLS endpoints**: extend existing TCP support with explicit TLS
+   certificate config only when there is real demand.
+
 ## Not planned
 
 - **Lifecycle management** (`start`, `stop`, `restart`, `compose up/down`).
-  Docker Compose and `docker` CLI already do this. ctrwatch stays read-only.
+  Docker Compose and `docker` CLI already do this. ctrwatch stays read-only
+  unless explicit user demand proves a narrow, opt-in action mode is worth the
+  extra risk.
+- **Direct cloud-provider integrations** (AWS/Azure/GCP APIs). Prefer Docker
+  contexts, kubeconfig, or existing runtime sockets over cloud-specific SDKs.
 - **Non-container monitoring** (tmux sessions, cron jobs, systemd units).
   Out of scope. Use dedicated tools for those domains.
 - **Configurable refresh intervals**. Hard-coded 10s is fine; YAGNI until

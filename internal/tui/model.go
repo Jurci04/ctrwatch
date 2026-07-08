@@ -238,7 +238,7 @@ func (m *Model) connectToServer(serverIdx int) tea.Cmd {
 		var cleanupFn func()
 
 		if config.IsLocalHost(s.Host) {
-			client = runtime.NewClient()
+			client = runtime.NewClientForSocket(s.Socket)
 			cleanupFn = func() {}
 		} else {
 			localSock, c, err := ssh.Tunnel(s.Host, s.Socket)

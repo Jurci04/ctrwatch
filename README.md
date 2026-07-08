@@ -1,12 +1,30 @@
 # ctrwatch
 
-`ctrwatch` is a small Go TUI for watching containers. It works with Docker,
-Podman, and other Docker-compatible runtime sockets.
+`ctrwatch` is a small Go TUI for watching containers across local and
+SSH-reachable servers. It works with Docker, Podman, and other
+Docker-compatible runtime sockets.
 
 Run `ctrwatch` with no arguments to open the TUI — it auto-detects local
 containers and lets you browse logs, inspect metadata, view stats, diff
 filesystem changes, see running processes, and connect to remote servers
 via SSH.
+
+It is intentionally agentless and read-only: no remote daemon to install, no
+database to run, and no container lifecycle actions by default.
+
+## Why ctrwatch
+
+Use `ctrwatch` when you want one terminal view across several small servers
+without installing anything on those servers beyond the runtime you already
+use.
+
+| Tool | Best fit |
+|------|----------|
+| ctrwatch | Agentless, read-only multi-server triage over SSH |
+| lazydocker | Full single-host Docker/Compose management |
+| ctop | Single-host container metrics |
+| tori-cli | SSH-first monitoring with agent/history/alerts |
+| dtop | Multi-host metrics dashboard |
 
 ## Install
 
@@ -84,9 +102,16 @@ Tagged containers are loaded from `$CTRWATCH_CONFIG`, `ctrwatch.yaml`, or
 ```yaml
 servers:
   - host: localhost
+    socket: /var/run/docker.sock
     containers:
       - api
       - worker
+    tags: [dev]
+
+  - host: localhost
+    socket: /run/user/1000/podman/podman.sock
+    containers:
+      - podman-api
     tags: [dev]
 
   - host: user@example.com
@@ -99,6 +124,28 @@ servers:
 
 `host: localhost`, `host: 127.0.0.1`, or an omitted `host` means local runtime.
 Remote hosts use SSH and the configured runtime socket.
+
+`host` can be any normal SSH target, including aliases from `~/.ssh/config`.
+That means `User`, `IdentityFile`, `ProxyJump`, agent auth, and other SSH
+client settings stay in your SSH config instead of `ctrwatch.yaml`:
+
+```sshconfig
+Host prod-api
+  HostName 203.0.113.10
+  User deploy
+  IdentityFile ~/.ssh/prod_ed25519
+  ProxyJump bastion
+```
+
+```yaml
+servers:
+  - host: prod-api
+    socket: /var/run/docker.sock
+    containers:
+      - api
+      - worker
+    tags: [prod]
+```
 
 Containers can also specify a socket directly:
 
@@ -145,10 +192,46 @@ Current support is centered on Docker-compatible Engine API sockets:
 - Podman: supported through its Docker-compatible socket
 - Other Docker-compatible runtimes: best effort
 
+### Podman
+
+Local Podman works when its Docker-compatible socket is available. Common
+socket paths:
+
+- rootless: `/run/user/$UID/podman/podman.sock`
+- system: `/run/podman/podman.sock`
+
+Examples:
+
+```bash
+DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock ctrwatch
+ctrwatch ps
+ctrwatch logs api@/run/user/$(id -u)/podman/podman.sock
+```
+
+Remote Podman works the same way as Docker: connect over SSH and point
+`socket` at the remote Podman socket:
+
+```yaml
+servers:
+  - host: prod-api
+    socket: /var/run/docker.sock
+    containers:
+      - web
+    tags: [prod]
+
+  - host: prod-api
+    socket: /run/user/1000/podman/podman.sock
+    containers:
+      - api
+      - worker
+    tags: [prod]
+```
+
 Future runtime work is tracked in
-[docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md), including opt-in Podman
-integration tests and possible containerd, Kubernetes, LXC/LXD, and Nomad
-support.
+[docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md). The preferred expansion
+path is to reuse existing user configuration: Docker contexts, Kubernetes
+contexts, Podman connections / `podman machine`, and Docker TCP/TLS endpoints.
+Direct AWS/Azure/GCP integrations are not planned for now.
 
 ## Development
 
@@ -198,9 +281,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 See [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md) for the full
 implementation plan. The main direction is:
 
-- make the TUI the default interactive entrypoint (done)
-- keep direct CLI commands for scripting (done)
-- add TUI views for logs, ps, inspect, stats, diff, top, servers (done)
-- add filter across all views (next)
-- verify Podman with opt-in integration tests
+- keep `ctrwatch` agentless, read-only, and SSH-first
+- make remote server state and reconnect behavior reliable
+- add filter across all views
+- surface health/problem summaries before detailed drill-down
+- make first-run config setup easier
 - add more runtime backends only when there is a concrete implementation path
