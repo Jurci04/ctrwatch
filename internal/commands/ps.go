@@ -107,5 +107,3 @@ func filterContainers(containers []runtime.Container, names []string) []runtime.
 	}
 	return filtered
 }
-
-
