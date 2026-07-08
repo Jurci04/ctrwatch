@@ -6,7 +6,7 @@
 ./test/e2e/run.sh
 ```
 
-Builds ctrwatch + a mock Docker Engine API server, runs 29 tests against both
+Builds ctrwatch + a mock Docker Engine API server, runs 33 tests against both
 TCP (`DOCKER_HOST`) and Unix socket modes. Zero dependencies beyond Go.
 
 ## Real container tests (requires Docker or Podman)
@@ -38,3 +38,91 @@ The runtime client auto-detects Podman sockets at:
 - `/run/user/$UID/podman/podman.sock`
 
 Or set `DOCKER_HOST` to any Docker-compatible socket path.
+
+## Manual Podman checklist
+
+Use this before claiming Podman support is release-ready.
+
+Build once:
+
+```bash
+go build -o ./ctrwatch .
+```
+
+Start two Podman containers with visible logs:
+
+```bash
+podman run -d --name ctrwatch-podman-api --rm alpine sh -c 'while true; do echo api; sleep 1; done'
+podman run -d --name ctrwatch-podman-worker --rm alpine sh -c 'while true; do echo worker; sleep 1; done'
+```
+
+Set the rootless Podman socket:
+
+```bash
+export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+```
+
+Run CLI checks:
+
+```bash
+./ctrwatch ps
+./ctrwatch inspect ctrwatch-podman-api
+./ctrwatch stats ctrwatch-podman-api ctrwatch-podman-worker
+timeout 3 ./ctrwatch logs --tail 5 ctrwatch-podman-api
+```
+
+Run the real integration test against Podman:
+
+```bash
+CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh --runtime podman --binary ./ctrwatch
+```
+
+Run the TUI:
+
+```bash
+./ctrwatch
+```
+
+Check that both containers appear in PS, stats update, logs stream, inspect
+opens, and diff/top do not crash.
+
+Test Docker and Podman together by writing a temporary config:
+
+```bash
+cat > /tmp/ctrwatch-mixed.yaml <<EOF
+servers:
+  - host: localhost
+    socket: /var/run/docker.sock
+    containers:
+      - docker-container-name
+    tags: [mixed]
+  - host: localhost
+    socket: /run/user/$(id -u)/podman/podman.sock
+    containers:
+      - ctrwatch-podman-api
+      - ctrwatch-podman-worker
+    tags: [mixed]
+EOF
+
+CTRWATCH_CONFIG=/tmp/ctrwatch-mixed.yaml ./ctrwatch stats @mixed
+CTRWATCH_CONFIG=/tmp/ctrwatch-mixed.yaml ./ctrwatch
+```
+
+For remote Podman, use an SSH alias from `~/.ssh/config` and the remote user's
+socket path:
+
+```yaml
+servers:
+  - host: prod-api
+    socket: /run/user/1000/podman/podman.sock
+    containers:
+      - api
+    tags: [podman-remote]
+```
+
+Cleanup:
+
+```bash
+podman rm -f ctrwatch-podman-api ctrwatch-podman-worker
+rm -f /tmp/ctrwatch-mixed.yaml
+```

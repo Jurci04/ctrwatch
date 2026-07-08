@@ -51,11 +51,15 @@ stay available for scripting.
 ### Phase 4: Runtime Confidence
 
 - Runtime client supports TCP (`tcp://`, `http://`) in addition to Unix sockets.
-- Mock E2E tests run against both TCP and Unix socket transports (32+ tests).
+- Mock E2E tests run against both TCP and Unix socket transports (33 tests).
 - Real-container integration tests (`CTRWATCH_INTEGRATION=1`) work with Docker
   and Podman.
 - `DOCKER_HOST` environment variable fully supported for any Docker-compatible
   runtime.
+- Configured local and remote servers can point at separate Docker and Podman
+  sockets at the same time.
+- Real-container E2E tests support `--runtime docker|podman` to avoid mixing
+  runtimes when both are installed.
 
 ### Phase 5: Views Expansion
 
@@ -63,6 +67,8 @@ stay available for scripting.
 - **Container top / processes view**: running processes inside a container.
 - **Historical stats sparkline**: last N CPU samples rendered as ASCII sparkline
   in the stats view.
+- **JSON output**: `inspect --json` and `stats --json` provide pipeable
+  machine-readable output.
 
 ### Phase 6: Server Browser
 
@@ -79,6 +85,15 @@ stay available for scripting.
 - Simplified keybindings (removed ctrl+c, space, tab, a).
 - Context-aware key hints in footer.
 - Consistent bordered panel style for all views.
+
+### Phase 8: Repo Hygiene
+
+- Install instructions use the correct `Jurci04/ctrwatch` owner.
+- README has CI, release, and Go Report Card badges.
+- CI runs `gofmt`, `go vet`, `go test -race`, and `golangci-lint`.
+- The mock E2E server binary is built from source and ignored instead of
+  committed.
+- Mock E2E TUI smoke test uses a PTY and exits cleanly after cleanup.
 
 ## Next
 
@@ -141,21 +156,27 @@ empty state.
 Effort: small (config write helpers, command wiring).
 Tests: temp-dir config write tests.
 
-### 6. Export inspect / stats as JSON
-
-Add `--json` flag to `inspect` and `stats` commands for pipeable machine-readable
-output. Useful for feeding into `jq` or other tools.
-
-Effort: trivial (conditional JSON encoding).
-Tests: capture and validate JSON output.
-
-### 7. Multiple socket/config profiles
+### 6. Multiple socket/config profiles
 
 Support `--config <path>` flag so users can quickly switch between projects
 or environments without editing `ctrwatch.yaml`.
 
 Effort: small (add flag, pass through config path).
 Tests: test flag overrides env var.
+
+### 7. Podman Manual Confidence Pass
+
+Run and record a real Podman session before adding Podman connection discovery.
+
+- Verify rootless socket: `/run/user/$UID/podman/podman.sock`.
+- Verify system socket when available: `/run/podman/podman.sock`.
+- Verify `DOCKER_HOST=unix://... ctrwatch`, direct CLI commands, and default
+  TUI.
+- Verify a config with Docker and Podman sockets at the same time.
+- Verify remote Podman over SSH with a configured `socket` path.
+
+Effort: small (manual runbook and fixes for anything found).
+Tests: `CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh --runtime podman`.
 
 ### 8. Table column sorting in PS view
 
