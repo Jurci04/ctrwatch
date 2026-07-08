@@ -8,10 +8,11 @@
 SSH-reachable servers. It works with Docker, Podman, and other
 Docker-compatible runtime sockets.
 
-Run `ctrwatch` with no arguments to open the TUI — it auto-detects local
-containers and lets you browse logs, inspect metadata, view stats, diff
-filesystem changes, see running processes, and connect to remote servers
-via SSH.
+Run `ctrwatch` with no arguments to open the TUI. Without a config file it
+auto-detects a local Docker or Podman socket. With `ctrwatch.yaml`, it uses the
+configured sockets so Docker, Podman, and remote hosts can be watched together.
+You can browse logs, inspect metadata, view stats, diff filesystem changes, see
+running processes, and connect to remote servers via SSH.
 
 It is intentionally agentless and read-only: no remote daemon to install, no
 database to run, and no container lifecycle actions by default.
@@ -61,8 +62,9 @@ go build -o bin/ctrwatch .
 ctrwatch
 ```
 
-Opens the TUI with all detected local containers. Use arrow keys to navigate,
-`enter` to focus a container, and `←`/`→` to switch between views.
+Opens the TUI. Use arrow keys to navigate, `enter` to focus a container, and
+`←`/`→` to switch between views. Container rows show their runtime source, such
+as `docker`, `podman`, or `tcp`.
 
 CLI commands are also available for scripting:
 
@@ -128,6 +130,9 @@ servers:
 
 `host: localhost`, `host: 127.0.0.1`, or an omitted `host` means local runtime.
 Remote hosts use SSH and the configured runtime socket.
+
+Local config entries connect automatically on startup. Remote entries are listed
+in the Servers view and connect when selected.
 
 `host` can be any normal SSH target, including aliases from `~/.ssh/config`.
 That means `User`, `IdentityFile`, `ProxyJump`, agent auth, and other SSH
@@ -230,6 +235,10 @@ servers:
       - worker
     tags: [prod]
 ```
+
+Runtime selection is explicit so one shell environment cannot hide Docker or
+Podman containers from the other runtime. Use `ctrwatch.yaml` for normal setup,
+or `name@socket` for a one-off CLI override.
 
 Future runtime work is tracked in
 [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md). The preferred expansion

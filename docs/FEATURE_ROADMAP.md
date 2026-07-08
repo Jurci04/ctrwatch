@@ -55,9 +55,13 @@ stay available for scripting.
 - Real-container integration tests (`CTRWATCH_INTEGRATION=1`) work with Docker
   and Podman.
 - Runtime selection is explicit through config sockets or `name@socket`
-  arguments; `DOCKER_HOST` is intentionally ignored.
+  arguments.
 - Configured local and remote servers can point at separate Docker and Podman
   sockets at the same time.
+- TUI rows show the runtime source (`docker`, `podman`, `tcp`, or fallback
+  `runtime`) so mixed container lists stay readable.
+- Local config entries connect automatically on startup; remote entries remain
+  explicit in the Servers view.
 - Real-container E2E tests support `--runtime docker|podman` to avoid mixing
   runtimes when both are installed.
 
@@ -85,6 +89,8 @@ stay available for scripting.
 - Simplified keybindings (removed ctrl+c, space, tab, a).
 - Context-aware key hints in footer.
 - Consistent bordered panel style for all views.
+- Container selection is clamped after connect/disconnect events so stale
+  server selections cannot panic the TUI.
 
 ### Phase 8: Repo Hygiene
 
