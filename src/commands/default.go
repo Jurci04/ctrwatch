@@ -18,25 +18,7 @@ func RunDefaultTUI() error {
 		servers = cfg.Servers
 	}
 
-	var names []string
-	var clients []*runtime.Client
-	if cfg == nil {
-		client := runtime.NewClient()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		containers, err := client.ListContainers(ctx, true)
-		if err != nil {
-			containers = nil
-		}
-
-		names = make([]string, len(containers))
-		clients = make([]*runtime.Client, len(containers))
-		for i, c := range containers {
-			names[i] = runtime.ContainerName(c.Names)
-			clients[i] = client
-		}
-	}
+	names, clients := loadLocalDefaults(servers)
 
 	opts := runtime.LogOptions{Tail: "100"}
 	interval := 10 * time.Second
@@ -50,4 +32,34 @@ func RunDefaultTUI() error {
 		return err
 	}
 	return nil
+}
+
+func loadLocalDefaults(servers []config.Server) ([]string, []*runtime.Client) {
+	configured := map[string]bool{}
+	for _, server := range servers {
+		if config.IsLocalHost(server.Host) {
+			configured[server.Socket] = true
+		}
+	}
+
+	var names []string
+	var clients []*runtime.Client
+	for _, socket := range runtime.ExistingDefaultSockets() {
+		if configured[socket] {
+			continue
+		}
+		client := runtime.NewClientForSocket(socket)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		containers, err := client.ListContainers(ctx, true)
+		cancel()
+		if err != nil {
+			continue
+		}
+
+		for _, c := range containers {
+			names = append(names, runtime.ContainerName(c.Names))
+			clients = append(clients, client)
+		}
+	}
+	return names, clients
 }

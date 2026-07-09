@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"ctrwatch/src/config"
-	"ctrwatch/src/runtime"
 	"ctrwatch/src/ssh"
 )
 
@@ -46,34 +45,23 @@ func resolveTagged(tag string) ([]containerDef, func(), error) {
 		return nil, nil, err
 	}
 
-	clients := map[string]*runtime.Client{}
 	var defs []containerDef
 	var cleanups []func()
 
 	for _, s := range matched {
-		var c *runtime.Client
-		if config.IsLocalHost(s.Host) {
-			c = runtime.NewClientForSocket(s.Socket)
-		} else {
-			key := s.Host + "\x00" + s.Socket
-			if _, ok := clients[key]; !ok {
-				session := ssh.NewServerSession(s)
-				client, err := session.Connect()
-				if err != nil {
-					for _, f := range cleanups {
-						f()
-					}
-					return nil, nil, err
-				}
-				cleanups = append(cleanups, func() { _ = session.Disconnect() })
-				c = client
-				clients[key] = c
-			} else {
-				c = clients[key]
+		resolved, err := ssh.ResolveServer(s)
+		if err != nil {
+			for _, f := range cleanups {
+				f()
 			}
+			return nil, nil, err
 		}
-		for _, name := range s.Containers {
-			defs = append(defs, containerDef{Name: name, Client: c})
+		for _, endpoint := range resolved {
+			session := endpoint.Session
+			cleanups = append(cleanups, func() { _ = session.Disconnect() })
+			for _, name := range endpoint.Containers {
+				defs = append(defs, containerDef{Name: name, Client: endpoint.Client})
+			}
 		}
 	}
 

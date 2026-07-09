@@ -1,6 +1,10 @@
 package tui
 
 import (
+	"context"
+	"net"
+	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -104,8 +108,8 @@ func TestPSViewRendersTable(t *testing.T) {
 	m.view = viewPS
 	m.width = 80
 	m.height = 24
-	m.containersInfo = []runtime.Container{
-		{ID: "abc123def456", Names: []string{"/nginx"}, Image: "nginx:1.25", State: "running", Status: "Up 2h"},
+	m.containersInfo = []containerListItem{
+		{Client: m.clients[0], Container: runtime.Container{ID: "abc123def456", Names: []string{"/nginx"}, Image: "nginx:1.25", State: "running", Status: "Up 2h"}},
 	}
 
 	view := m.View()
@@ -211,9 +215,24 @@ func TestEscInFocusedGoesBack(t *testing.T) {
 }
 
 func TestConnectLocalServerUsesConfiguredSocket(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "runtime.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/containers/json" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`[{"Names":["/api"]}]`))
+	})}
+	go func() { _ = server.Serve(listener) }()
+	defer func() { _ = server.Shutdown(context.Background()) }()
+
 	servers := []config.Server{{
 		Host:       "localhost",
-		Socket:     "/run/user/1000/podman/podman.sock",
+		Socket:     socket,
 		Containers: []string{"api"},
 	}}
 	m := NewModel(nil, nil, runtime.LogOptions{}, 0, servers)
@@ -226,8 +245,11 @@ func TestConnectLocalServerUsesConfiguredSocket(t *testing.T) {
 	if got.err != nil {
 		t.Fatal(got.err)
 	}
-	if got.client.SocketPath != "unix:///run/user/1000/podman/podman.sock" {
-		t.Fatalf("socket = %q", got.client.SocketPath)
+	if len(got.endpoints) != 1 {
+		t.Fatalf("endpoints = %#v", got.endpoints)
+	}
+	if got.endpoints[0].Client.SocketPath != "unix://"+socket {
+		t.Fatalf("socket = %q", got.endpoints[0].Client.SocketPath)
 	}
 }
 
@@ -274,8 +296,8 @@ func TestViewHandlesShortClientSlice(t *testing.T) {
 	m.view = viewPS
 	m.width = 80
 	m.height = 24
-	m.containersInfo = []runtime.Container{
-		{ID: "abc123def456", Names: []string{"/api"}, Image: "nginx:1.25", State: "running", Status: "Up"},
+	m.containersInfo = []containerListItem{
+		{Client: nil, Container: runtime.Container{ID: "abc123def456", Names: []string{"/api"}, Image: "nginx:1.25", State: "running", Status: "Up"}},
 	}
 
 	view := m.View()
@@ -291,8 +313,8 @@ func TestDisconnectServerBoundsContainerSlices(t *testing.T) {
 		Containers: []string{"api", "worker"},
 	}}
 	m := NewModel([]string{"api"}, []*runtime.Client{runtime.NewClientForSocket("/var/run/docker.sock")}, runtime.LogOptions{}, 0, servers)
-	m.serverStatus[0] = "connected"
-	m.serverContainerStart[0] = 0
+	m.serverStates[0].status = "connected"
+	m.serverStates[0].containerStart = 0
 
 	m.disconnectServer(0)
 
@@ -301,5 +323,46 @@ func TestDisconnectServerBoundsContainerSlices(t *testing.T) {
 	}
 	if len(m.clients) != 0 || len(m.containerNames) != 0 || len(m.containerRuntimes) != 0 {
 		t.Fatalf("parallel container slices not trimmed: clients=%d names=%d runtimes=%d", len(m.clients), len(m.containerNames), len(m.containerRuntimes))
+	}
+}
+
+func TestServerViewCanCreateConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ctrwatch.yaml")
+	t.Setenv("CTRWATCH_CONFIG", path)
+	m := NewModel(nil, nil, runtime.LogOptions{}, 0)
+	m.view = viewServers
+
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	m = model.(*Model)
+	if !m.setupActive {
+		t.Fatal("setup did not start")
+	}
+	keys := []tea.KeyMsg{
+		{Type: tea.KeyCtrlU},
+		{Type: tea.KeyRunes, Runes: []rune("prod-api")},
+		{Type: tea.KeyTab},
+		{Type: tea.KeyRunes, Runes: []rune("/run/podman/podman.sock")},
+		{Type: tea.KeyTab},
+		{Type: tea.KeyRunes, Runes: []rune("api, worker")},
+		{Type: tea.KeyTab},
+		{Type: tea.KeyCtrlU},
+		{Type: tea.KeyRunes, Runes: []rune("prod")},
+		{Type: tea.KeyEnter},
+	}
+	for _, key := range keys {
+		model, _ = m.Update(key)
+		m = model.(*Model)
+	}
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.Servers[0]
+	if got.Host != "prod-api" || got.Socket != "/run/podman/podman.sock" {
+		t.Fatalf("server = %+v", got)
+	}
+	if !strings.Contains(m.View(), "prod-api") {
+		t.Fatalf("view missing server:\n%s", m.View())
 	}
 }

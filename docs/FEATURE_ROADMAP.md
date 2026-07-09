@@ -88,9 +88,6 @@ stay available for scripting.
 - Removed `watch` command (redundant with default TUI).
 - Simplified keybindings (removed ctrl+c, space, tab, a).
 - Context-aware key hints in footer.
-- Consistent bordered panel style for all views.
-- Container selection is clamped after connect/disconnect events so stale
-  server selections cannot panic the TUI.
 
 ### Phase 8: Repo Hygiene
 
@@ -100,6 +97,18 @@ stay available for scripting.
 - The mock E2E server binary is built from source and ignored instead of
   committed.
 - Mock E2E TUI smoke test uses a PTY and exits cleanly after cleanup.
+
+### SSH Lifecycle Ownership
+
+- `ServerSession` is now the public SSH interface for connect, disconnect,
+  state, socket, and last-error access.
+- The tunnel implementation is private and owns bounded reconnect with the
+  runtime ping probe.
+- TUI and config resolution both use the session abstraction instead of
+  calling the tunnel helper directly.
+- Added focused SSH session/tunnel tests for core state and helper behavior.
+- Container selection is clamped after connect/disconnect events so stale
+  server selections cannot panic the TUI.
 
 ## Next
 
@@ -144,9 +153,6 @@ Tests: mock inspect/status data for unhealthy/restarting/stale cases.
 
 ### 4. Event Stream View
 
-Subscribe to the Docker Events API (`GET /events`) and show a rolling feed
-of container lifecycle events (start, stop, die, health_status, etc.).
-
 Effort: medium (new runtime method + streaming view).
 Tests: mock server emits timed events.
 
@@ -161,11 +167,6 @@ empty state.
 
 Effort: small (config write helpers, command wiring).
 Tests: temp-dir config write tests.
-
-### 6. Multiple socket/config profiles
-
-Support `--config <path>` flag so users can quickly switch between projects
-or environments without editing `ctrwatch.yaml`.
 
 Effort: small (add flag, pass through config path).
 Tests: test flag overrides env var.

@@ -1,28 +1,24 @@
-// ponytail: kept for debugging even though no code imports it yet.
-// Remove this package once ctrwatch has a --debug flag or structured logging.
 package utils
 
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
-var LOG_FILE_DIR = "./logs/app.log"
+const logFile = "./logs/app.log"
 
-func LogToFile(message string) {
-	file, err := os.OpenFile(LOG_FILE_DIR, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func Debugf(format string, args ...any) {
+	if os.Getenv("CTRWATCH_DEBUG") == "" {
+		return
+	}
+	if err := os.MkdirAll("./logs", 0755); err != nil {
+		return
+	}
+	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Printf("Error opening log file")
 		return
 	}
 	defer func() { _ = file.Close() }()
-	_, _ = file.WriteString(message)
-}
-
-func init() {
-	_ = os.MkdirAll("./logs", 0755)
-	file, err := os.Create(LOG_FILE_DIR)
-	if err == nil {
-		_ = file.Close()
-	}
+	_, _ = fmt.Fprintf(file, "%s "+format+"\n", append([]any{time.Now().Format(time.RFC3339)}, args...)...)
 }

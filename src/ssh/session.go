@@ -5,11 +5,14 @@ import (
 
 	"ctrwatch/src/config"
 	"ctrwatch/src/runtime"
+	"ctrwatch/src/utils"
 )
 
 type ServerSession struct {
 	server config.Server
 
+	// TODO(session): promote reconnect state here so the UI can render
+	// stale/failed server status without reaching into tunnel internals.
 	mu      sync.Mutex
 	tunnel  *serverTunnel
 	client  *runtime.Client
@@ -26,12 +29,16 @@ func (s *ServerSession) Server() config.Server {
 }
 
 func (s *ServerSession) Connect() (*runtime.Client, error) {
+	utils.Debugf("ssh session connect start host=%q socket=%q", s.server.Host, s.server.Socket)
 	s.mu.Lock()
 	if s.client != nil && s.state == "connected" {
 		client := s.client
 		s.mu.Unlock()
+		utils.Debugf("ssh session reuse connected host=%q socket=%q", s.server.Host, s.server.Socket)
 		return client, nil
 	}
+	// TODO(session): if the tunnel already exists, reuse its live socket and
+	// only rebuild the runtime client when the transport actually changes.
 	s.state = "connecting"
 	s.lastErr = nil
 	s.mu.Unlock()
@@ -45,6 +52,7 @@ func (s *ServerSession) Connect() (*runtime.Client, error) {
 			s.state = "failed"
 			s.lastErr = err
 			s.mu.Unlock()
+			utils.Debugf("ssh session connect failed host=%q socket=%q err=%v", s.server.Host, s.server.Socket, err)
 			return nil, err
 		}
 		s.mu.Lock()
@@ -56,12 +64,15 @@ func (s *ServerSession) Connect() (*runtime.Client, error) {
 
 	s.mu.Lock()
 	s.client = client
+	// TODO(session): keep the last failure reason around separately from a
+	// successful connect so reconnecting/failed can be shown in the servers view.
 	if s.state != "failed" {
 		s.state = "connected"
 	}
 	s.lastErr = nil
 	s.mu.Unlock()
 
+	utils.Debugf("ssh session connected host=%q socket=%q runtime=%q clientSocket=%q", s.server.Host, s.server.Socket, client.Runtime, client.SocketPath)
 	return client, nil
 }
 
@@ -77,9 +88,11 @@ func (s *ServerSession) Disconnect() error {
 
 	if tunnel != nil {
 		if err := tunnel.Stop(); err != nil {
+			utils.Debugf("ssh session disconnect failed host=%q socket=%q err=%v", s.server.Host, s.server.Socket, err)
 			return err
 		}
 	}
+	utils.Debugf("ssh session disconnected host=%q socket=%q", s.server.Host, s.server.Socket)
 	_ = client
 	return nil
 }

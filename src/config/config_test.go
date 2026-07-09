@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestLoadDefaultsSocketAndValidates(t *testing.T) {
+func TestLoadPreservesBlankSocketAndValidates(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ctrwatch.yaml")
 	if err := os.WriteFile(path, []byte(`
 servers:
@@ -23,7 +23,7 @@ servers:
 		t.Fatal(err)
 	}
 	server := cfg.Servers[0]
-	if server.Socket != "/var/run/docker.sock" {
+	if server.Socket != "" {
 		t.Fatalf("socket = %q", server.Socket)
 	}
 	if !IsLocalHost(server.Host) {
@@ -69,5 +69,17 @@ func TestConfigPathPrefersEnvThenExistingFiles(t *testing.T) {
 	}
 	if got := ConfigPath(); got != "settings.yaml" {
 		t.Fatalf("ConfigPath = %q, want settings.yaml", got)
+	}
+}
+
+func TestSSHConfigHostsFrom(t *testing.T) {
+	got := SSHConfigHostsFrom(`
+Host prod-api *.internal prod-api
+  HostName 203.0.113.10
+Host staging bastion?
+`)
+	want := []string{"prod-api", "staging"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("hosts = %v, want %v", got, want)
 	}
 }

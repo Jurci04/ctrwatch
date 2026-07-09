@@ -20,17 +20,31 @@ type Client struct {
 }
 
 func detectSocket() string {
-	candidates := []string{
+	for _, s := range ExistingDefaultSockets() {
+		return "unix://" + s
+	}
+	return "unix:///var/run/docker.sock"
+}
+
+func DefaultSockets() []string {
+	return []string{
 		"/var/run/docker.sock",
 		"/run/podman/podman.sock",
 		fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid()),
 	}
-	for _, s := range candidates {
+}
+
+func ExistingDefaultSockets() []string {
+	var sockets []string
+	for _, s := range DefaultSockets() {
 		if _, err := os.Stat(s); err == nil {
-			return "unix://" + s
+			sockets = append(sockets, s)
 		}
 	}
-	return "unix:///var/run/docker.sock"
+	if len(sockets) == 0 {
+		return []string{"/var/run/docker.sock"}
+	}
+	return sockets
 }
 
 func clientForAddr(addr string) *Client {

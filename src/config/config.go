@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -13,6 +14,16 @@ import (
 type Config struct {
 	Interval string   `yaml:"interval,omitempty"`
 	Servers  []Server `yaml:"servers"`
+}
+
+func SplitList(value string) []string {
+	var values []string
+	for _, part := range strings.Split(value, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
 }
 
 // PollInterval returns the configured polling interval or the default 10s.
@@ -62,10 +73,7 @@ func Load(path string) (*Config, error) {
 	if len(cfg.Servers) == 0 {
 		return nil, fmt.Errorf("config: no servers defined")
 	}
-	for i, s := range cfg.Servers {
-		if s.Socket == "" {
-			cfg.Servers[i].Socket = "/var/run/docker.sock"
-		}
+	for _, s := range cfg.Servers {
 		if len(s.Containers) == 0 {
 			return nil, fmt.Errorf("config: server %q has no containers", s.Host)
 		}

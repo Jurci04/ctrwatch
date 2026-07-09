@@ -62,8 +62,9 @@ Enable the local Git hooks:
 git config core.hooksPath .githooks
 ```
 
-The pre-commit hook runs `gofmt`, `go mod tidy -diff`, `go vet ./...`, and
-`go test ./...`. CI also runs the race detector and coverage.
+The pre-commit hook runs `gofmt`, `go mod tidy -diff`, `go vet ./...`,
+`golangci-lint`, and `go test ./...`. CI also runs the race detector and
+coverage.
 
 Run:
 

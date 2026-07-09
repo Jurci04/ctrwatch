@@ -21,7 +21,7 @@ type statsMsg struct {
 }
 
 type containersListMsg struct {
-	Containers []runtime.Container
+	Containers []containerListItem
 	Err        error
 }
 
@@ -43,15 +43,17 @@ type topMsg struct {
 type serverStateTickMsg struct{}
 
 type serverConnectMsg struct {
-	serverIdx  int
-	client     *runtime.Client
-	session    *ssh.ServerSession
-	containers []string
-	runtime    string
-	err        error
+	serverIdx int
+	endpoints []ssh.ResolvedServer
+	err       error
 }
 
 type visibleLogLine struct {
 	text   string
 	stderr bool
+}
+
+type containerListItem struct {
+	Client    *runtime.Client
+	Container runtime.Container
 }

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"time"
 
@@ -14,15 +13,6 @@ import (
 )
 
 const maxLines = 200
-
-// ponytail: cached every 60s to avoid hammering the daemon.
-// InspectContainer returns the full container metadata; its
-// status and startedAt rarely change between polls.
-type containerMeta struct {
-	status    string
-	startedAt time.Time
-	fetchedAt time.Time
-}
 
 type Model struct {
 	containers        []string
@@ -42,7 +32,7 @@ type Model struct {
 	logOpts           runtime.LogOptions
 
 	view           viewType
-	containersInfo []runtime.Container
+	containersInfo []containerListItem
 	inspect        *runtime.ContainerInspect
 	diff           []runtime.Change
 	top            *runtime.TopResponse
@@ -50,10 +40,22 @@ type Model struct {
 	pollInterval time.Duration
 	disabled     map[string]bool
 
-	servers              []config.Server
-	serverStatus         []string
-	serverSessions       []*ssh.ServerSession
-	serverContainerStart []int
+	servers      []config.Server
+	serverStates []serverState
+
+	setupActive  bool
+	setupField   int
+	setupValues  [4]string
+	setupMessage string
+	setupHosts   []string
+}
+
+type serverState struct {
+	status         string
+	sessions       []*ssh.ServerSession
+	containerStart int
+	containerCount int
+	err            string
 }
 
 func NewModel(containers []string, clients []*runtime.Client, opts runtime.LogOptions, pollInterval time.Duration, servers ...[]config.Server) *Model {
@@ -93,18 +95,13 @@ func NewModel(containers []string, clients []*runtime.Client, opts runtime.LogOp
 	}
 	if len(servers) > 0 {
 		m.servers = servers[0]
-		m.serverStatus = make([]string, len(m.servers))
-		m.serverSessions = make([]*ssh.ServerSession, len(m.servers))
-		m.serverContainerStart = make([]int, len(m.servers))
-		for i := range m.serverContainerStart {
-			m.serverContainerStart[i] = -1
+		m.serverStates = make([]serverState, len(m.servers))
+		for i := range m.serverStates {
+			m.serverStates[i].containerStart = -1
 		}
 	}
 	return m
 }
-
-func (m *Model) LinesCh() chan<- []runtime.LogLine                  { return m.linesCh }
-func (m *Model) StatsCh() chan<- map[string]*runtime.ContainerStats { return m.statsCh }
 
 func (m *Model) clampSelected() {
 	if m.focused && (m.selected < 0 || m.selected >= len(m.containers)) {
@@ -135,7 +132,7 @@ func (m *Model) Init() tea.Cmd {
 	}
 	for i, s := range m.servers {
 		if config.IsLocalHost(s.Host) {
-			m.serverStatus[i] = "connecting"
+			m.serverStates[i].status = "connecting"
 			cmds = append(cmds, m.connectToServer(i))
 		}
 	}
@@ -145,47 +142,6 @@ func (m *Model) Init() tea.Cmd {
 	}
 	cmds = append(cmds, listenLogs(m.linesCh), listenStats(m.statsCh))
 	return tea.Batch(cmds...)
-}
-
-func (m *Model) serverStateTick() tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return serverStateTickMsg{}
-	})
-}
-
-func (m *Model) streamLogs(client *runtime.Client, key, name string) {
-	lines, errs := client.StreamLogs(m.ctx, name, m.logOpts)
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-	var batch []runtime.LogLine
-
-	for {
-		select {
-		case line, ok := <-lines:
-			if !ok {
-				if len(batch) > 0 {
-					m.linesCh <- batch
-				}
-				goto done
-			}
-			line.Container = key
-			batch = append(batch, line)
-		case <-ticker.C:
-			if len(batch) > 0 {
-				m.linesCh <- batch
-				batch = nil
-			}
-		case <-m.ctx.Done():
-			return
-		}
-	}
-
-done:
-	if err := runtime.ReadStreamError(errs); err != nil {
-		m.linesCh <- []runtime.LogLine{
-			{Container: key, Text: fmt.Sprintf("error: %v", err)},
-		}
-	}
 }
 
 func (m *Model) containerName(i int) string {
@@ -212,180 +168,12 @@ func containerKey(runtimeName, name string) string {
 	return runtimeName + "/" + name
 }
 
-func (m *Model) pollStats() {
-	if len(m.containers) == 0 || len(m.clients) == 0 {
-		return
-	}
-	ticker := time.NewTicker(m.pollInterval)
-	defer ticker.Stop()
-
-	const refreshMeta = 60 * time.Second
-	metaCache := map[string]*containerMeta{}
-
-	loadMeta := func(i int, key, name string) {
-		info, err := m.clients[i].InspectContainer(m.ctx, name)
-		if err != nil {
-			return
-		}
-		meta := &containerMeta{status: info.State.Status, fetchedAt: time.Now()}
-		if info.State.Status == "running" && info.State.StartedAt != "" {
-			t, err := time.Parse(time.RFC3339Nano, info.State.StartedAt)
-			if err == nil {
-				meta.startedAt = t
-			}
-		}
-		metaCache[key] = meta
-	}
-
-	formatUptime := func(d time.Duration) string {
-		h := int(d.Hours())
-		if h > 24 {
-			return fmt.Sprintf("%dd%dh", h/24, h%24)
-		} else if h > 0 {
-			return fmt.Sprintf("%dh%dm", h, int(d.Minutes())%60)
-		}
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-
-	fetch := func() {
-		stats := make(map[string]*runtime.ContainerStats, len(m.containers))
-		for i, key := range m.containers {
-			if i >= len(m.clients) || m.clients[i] == nil {
-				continue
-			}
-			name := m.containerName(i)
-			s, err := m.clients[i].StatsContainer(m.ctx, name)
-			if err != nil {
-				stats[key] = &runtime.ContainerStats{Status: fmt.Sprintf("error: %v", err)}
-				continue
-			}
-			meta := metaCache[key]
-			if meta == nil || time.Since(meta.fetchedAt) > refreshMeta {
-				loadMeta(i, key, name)
-				meta = metaCache[key]
-			}
-			if meta != nil {
-				s.Status = meta.status
-				if !meta.startedAt.IsZero() {
-					s.Uptime = formatUptime(time.Since(meta.startedAt))
-				}
-			}
-			stats[key] = s
-		}
-		if len(stats) > 0 {
-			select {
-			case m.statsCh <- stats:
-			case <-m.ctx.Done():
-			}
-		}
-	}
-
-	fetch()
-	for {
-		select {
-		case <-ticker.C:
-			fetch()
-		case <-m.ctx.Done():
-			return
-		}
-	}
-}
-
-func listenLogs(ch <-chan []runtime.LogLine) tea.Cmd {
-	return func() tea.Msg {
-		batch, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return logBatchMsg(batch)
-	}
-}
-
-func listenStats(ch <-chan map[string]*runtime.ContainerStats) tea.Cmd {
-	return func() tea.Msg {
-		s, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return statsMsg{s}
-	}
-}
-
-func (m *Model) connectToServer(serverIdx int) tea.Cmd {
-	return func() tea.Msg {
-		s := m.servers[serverIdx]
-		session := ssh.NewServerSession(s)
-		client, err := session.Connect()
-
-		if err != nil {
-			return serverConnectMsg{serverIdx: serverIdx, err: err}
-		}
-
-		return serverConnectMsg{
-			serverIdx:  serverIdx,
-			client:     client,
-			session:    session,
-			containers: s.Containers,
-			runtime:    client.Runtime,
-		}
-	}
-}
-
-func (m *Model) fetchContainers() tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		idx := m.selected
-		if idx < 0 || idx >= len(m.clients) || m.clients[idx] == nil {
-			return containersListMsg{Err: fmt.Errorf("no client for selected container")}
-		}
-		containers, err := m.clients[idx].ListContainers(ctx, true)
-		return containersListMsg{Containers: containers, Err: err}
-	}
-}
-
-func (m *Model) fetchInspect() tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		idx := m.selected
-		if idx < 0 || idx >= len(m.clients) || m.clients[idx] == nil {
-			return inspectMsg{Err: fmt.Errorf("no client for selected container")}
-		}
-		info, err := m.clients[idx].InspectContainer(ctx, m.containerName(idx))
-		return inspectMsg{Inspect: info, Err: err}
-	}
-}
-
-func (m *Model) fetchDiff() tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		idx := m.selected
-		if idx < 0 || idx >= len(m.clients) || m.clients[idx] == nil {
-			return diffMsg{Err: fmt.Errorf("no client for selected container")}
-		}
-		changes, err := m.clients[idx].DiffContainer(ctx, m.containerName(idx))
-		return diffMsg{Changes: changes, Err: err}
-	}
-}
-
-func (m *Model) fetchTop() tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		idx := m.selected
-		if idx < 0 || idx >= len(m.clients) || m.clients[idx] == nil {
-			return topMsg{Err: fmt.Errorf("no client for selected container")}
-		}
-		top, err := m.clients[idx].TopContainer(ctx, m.containerName(idx))
-		return topMsg{Top: top, Err: err}
-	}
-}
-
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.setupActive {
+			return m.updateSetup(msg)
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.disconnectAll()
@@ -425,11 +213,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.view == viewServers && len(m.servers) > 0 {
 				idx := m.selected
-				if idx < len(m.servers) && (m.serverStatus[idx] == "" || m.serverStatus[idx] == "error" || m.serverStatus[idx] == "failed") {
-					m.serverStatus[idx] = "connecting"
-					if idx < len(m.serverContainerStart) {
-						m.serverContainerStart[idx] = -1
-					}
+				if idx < len(m.servers) && (m.serverStates[idx].status == "" || m.serverStates[idx].status == "error" || m.serverStates[idx].status == "failed") {
+					m.serverStates[idx].status = "connecting"
+					m.serverStates[idx].err = ""
+					m.serverStates[idx].containerStart = -1
+					m.serverStates[idx].containerCount = 0
 					return m, m.connectToServer(idx)
 				}
 			}
@@ -440,9 +228,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.view = viewServers
 				return m, m.onViewChanged()
 			}
+		case "i":
+			if m.view == viewServers && len(m.servers) == 0 {
+				m.startSetup()
+			}
 		case "d":
 			if m.view == viewServers {
-				if len(m.servers) > 0 && m.selected < len(m.servers) && m.serverStatus[m.selected] == "connected" {
+				if len(m.servers) > 0 && m.selected < len(m.servers) && m.serverStates[m.selected].status == "connected" {
 					m.disconnectServer(m.selected)
 				}
 			} else if len(m.containers) > 0 {
@@ -499,90 +291,54 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case serverStateTickMsg:
+		// TODO(wiring): feed the live session state and last error into the view
+		// so reconnecting/failed rows stay visible without user interaction.
 		if m.view == viewServers && len(m.servers) > 0 {
 			return m, m.serverStateTick()
 		}
 
 	case serverConnectMsg:
 		if msg.err != nil {
-			m.serverStatus[msg.serverIdx] = "error"
-			m.serverSessions[msg.serverIdx] = nil
+			// TODO(tui): keep the previous server containers visible and label the
+			// row stale instead of clearing everything on a transient SSH failure.
+			m.serverStates[msg.serverIdx].status = "error"
+			m.serverStates[msg.serverIdx].err = msg.err.Error()
+			m.serverStates[msg.serverIdx].sessions = nil
 			return m, nil
 		}
-		m.serverSessions[msg.serverIdx] = msg.session
-		if msg.session != nil {
-			m.serverStatus[msg.serverIdx] = msg.session.State()
-		} else {
-			m.serverStatus[msg.serverIdx] = "connected"
+		state := &m.serverStates[msg.serverIdx]
+		state.sessions = nil
+		for _, endpoint := range msg.endpoints {
+			if endpoint.Session != nil {
+				state.sessions = append(state.sessions, endpoint.Session)
+			}
 		}
-		m.serverContainerStart[msg.serverIdx] = len(m.containers)
-		for _, name := range msg.containers {
-			key := containerKey(msg.runtime, name)
-			m.containers = append(m.containers, key)
-			m.containerNames = append(m.containerNames, name)
-			m.containerRuntimes = append(m.containerRuntimes, msg.runtime)
-			m.clients = append(m.clients, msg.client)
-			m.lines[key] = nil
-			go m.streamLogs(msg.client, key, name)
+		state.status = "connected"
+		if len(state.sessions) > 0 {
+			state.status = state.sessions[0].State()
 		}
+		state.err = ""
+		state.containerStart = len(m.containers)
+		added := 0
+		for _, endpoint := range msg.endpoints {
+			for _, name := range endpoint.Containers {
+				key := containerKey(endpoint.Runtime, name)
+				m.containers = append(m.containers, key)
+				m.containerNames = append(m.containerNames, name)
+				m.containerRuntimes = append(m.containerRuntimes, endpoint.Runtime)
+				m.clients = append(m.clients, endpoint.Client)
+				m.lines[key] = nil
+				go m.streamLogs(endpoint.Client, key, name)
+				added++
+			}
+		}
+		state.containerCount = added
 		if len(m.containers) > 0 && m.view == viewServers && m.selected >= len(m.servers) {
 			m.selected = 0
 		}
 	}
 
 	return m, nil
-}
-
-func (m *Model) disconnectServer(srvIdx int) {
-	if m.serverStatus[srvIdx] != "connected" && m.serverStatus[srvIdx] != "reconnecting" && m.serverStatus[srvIdx] != "connecting" {
-		return
-	}
-	m.serverStatus[srvIdx] = ""
-	if m.serverSessions[srvIdx] != nil {
-		_ = m.serverSessions[srvIdx].Disconnect()
-		m.serverSessions[srvIdx] = nil
-	}
-	start := m.serverContainerStart[srvIdx]
-	m.serverContainerStart[srvIdx] = -1
-	if start < 0 {
-		return
-	}
-	count := len(m.servers[srvIdx].Containers)
-	end := start + count
-	if start > len(m.containers) {
-		return
-	}
-	if end > len(m.containers) {
-		end = len(m.containers)
-	}
-
-	for _, name := range m.servers[srvIdx].Containers {
-		key := containerKey(runtime.RuntimeKind(m.servers[srvIdx].Socket), name)
-		delete(m.lines, key)
-		delete(m.stats, key)
-		delete(m.disabled, key)
-	}
-
-	m.containers = append(m.containers[:start], m.containers[end:]...)
-	m.containerNames = append(m.containerNames[:start], m.containerNames[end:]...)
-	m.containerRuntimes = append(m.containerRuntimes[:start], m.containerRuntimes[end:]...)
-	m.clients = append(m.clients[:start], m.clients[end:]...)
-
-	for i := range m.serverContainerStart {
-		if m.serverStatus[i] == "connected" && m.serverContainerStart[i] > start {
-			m.serverContainerStart[i] -= count
-		}
-	}
-
-	if m.selected >= len(m.containers) {
-		m.selected = max(0, len(m.containers)-1)
-	}
-}
-
-func (m *Model) disconnectAll() {
-	for i := range m.serverStatus {
-		m.disconnectServer(i)
-	}
 }
 
 func (m *Model) nextEnabled(dir int) int {

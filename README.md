@@ -56,6 +56,14 @@ go build -o bin/ctrwatch .
 - Access to the runtime socket
 - `ssh` for remote hosts
 
+ctrwatch talks to runtimes through Docker-compatible API sockets. Docker usually
+starts its socket with the daemon. For rootless Podman, enable the user socket:
+
+```bash
+systemctl --user enable --now podman.socket
+ls -l /run/user/$(id -u)/podman/podman.sock
+```
+
 ## Quick Start
 
 ```bash
@@ -104,6 +112,19 @@ Keys:
 
 Tagged containers are loaded from `$CTRWATCH_CONFIG`, `ctrwatch.yaml`, or
 `settings.yaml`.
+
+First run:
+
+```bash
+ctrwatch config init
+```
+
+Or open `ctrwatch`, switch to Servers, and press `i` to create `ctrwatch.yaml`
+from the TUI. Press `ctrl+a` in the TUI setup form to load SSH aliases from
+`~/.ssh/config`.
+
+For SSH troubleshooting, run with `CTRWATCH_DEBUG=1`; debug logs are appended to
+`./logs/app.log`.
 
 ```yaml
 servers:
@@ -164,7 +185,15 @@ ctrwatch logs api@unix:///run/podman/podman.sock
 ctrwatch stats api@/var/run/docker.sock worker@/run/podman/podman.sock
 ```
 
-Socket resolution order:
+Socket behavior:
+
+- The TUI always loads existing local default sockets (Docker/Podman) unless
+  that exact local socket is already configured.
+- A config entry with no `socket` probes default Docker/Podman socket paths and
+  uses only sockets where the configured containers are found.
+- A config entry with `socket` uses only that socket.
+
+Container argument socket resolution order:
 
 1. `name@socket` in the container argument
 2. configured `socket` in `ctrwatch.yaml`

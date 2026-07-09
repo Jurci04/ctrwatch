@@ -18,6 +18,7 @@ func printUsage() {
 	fmt.Println("  import [--tag TAG] [file]    Import Compose/Podman/Kube names")
 	fmt.Println("  import --from-running        Import running local containers")
 	fmt.Println("  config check                 Validate config")
+	fmt.Println("  config init                  Create ctrwatch.yaml")
 	fmt.Println()
 	fmt.Println("Default (no command) opens the TUI with local containers and a server browser.")
 }

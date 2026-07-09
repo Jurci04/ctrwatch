@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"ctrwatch/src/config"
+	"ctrwatch/src/runtime"
 )
 
 func TestServerSessionStartsUnknown(t *testing.T) {
@@ -83,5 +84,31 @@ func TestServerSessionConnectIsIdempotentUntilDisconnect(t *testing.T) {
 	}
 	if got := session.State(); got != "closed" {
 		t.Fatalf("State() after Disconnect = %q, want %q", got, "closed")
+	}
+}
+
+func TestResolveServerExplicitSocket(t *testing.T) {
+	oldFind := findContainersOnSocket
+	findContainersOnSocket = func(*runtime.Client, []string) ([]string, error) {
+		return []string{"api"}, nil
+	}
+	defer func() { findContainersOnSocket = oldFind }()
+
+	resolved, err := ResolveServer(config.Server{
+		Host:       "localhost",
+		Socket:     "/run/user/1000/podman/podman.sock",
+		Containers: []string{"api"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("resolved = %#v", resolved)
+	}
+	if got := resolved[0].Client.SocketPath; got != "unix:///run/user/1000/podman/podman.sock" {
+		t.Fatalf("socket = %q", got)
+	}
+	if len(resolved[0].Containers) != 1 || resolved[0].Containers[0] != "api" {
+		t.Fatalf("containers = %#v", resolved[0].Containers)
 	}
 }
