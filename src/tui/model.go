@@ -187,9 +187,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = (m.selected + 1) % len(m.servers)
 			} else if len(m.containers) > 0 {
 				if m.view == viewLogs {
-					m.selected = (m.selected + 1) % len(m.containers)
-				} else {
 					m.selected = m.nextEnabled(1)
+				} else {
+					m.selected = (m.selected + 1) % len(m.containers)
 				}
 			}
 			return m, m.onContainerChanged()
@@ -198,9 +198,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = (m.selected + len(m.servers) - 1) % len(m.servers)
 			} else if len(m.containers) > 0 {
 				if m.view == viewLogs {
-					m.selected = (m.selected + len(m.containers) - 1) % len(m.containers)
-				} else {
 					m.selected = m.nextEnabled(-1)
+				} else {
+					m.selected = (m.selected + len(m.containers) - 1) % len(m.containers)
 				}
 			}
 			return m, m.onContainerChanged()
@@ -214,6 +214,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == viewServers && len(m.servers) > 0 {
 				idx := m.selected
 				if idx < len(m.servers) && (m.serverStates[idx].status == "" || m.serverStates[idx].status == "error" || m.serverStates[idx].status == "failed") {
+					m.removeServerContainers(idx)
 					m.serverStates[idx].status = "connecting"
 					m.serverStates[idx].err = ""
 					m.serverStates[idx].containerStart = -1

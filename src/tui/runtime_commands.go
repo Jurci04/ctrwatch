@@ -238,30 +238,15 @@ func (m *Model) fetchTop() tea.Cmd {
 	}
 }
 
-func (m *Model) disconnectServer(srvIdx int) {
-	// TODO(tui): only prune container slices on explicit user disconnect; a
-	// reconnecting session should preserve the old rows as stale data.
+func (m *Model) removeServerContainers(srvIdx int) {
 	state := &m.serverStates[srvIdx]
-	if state.status != "connected" && state.status != "reconnecting" && state.status != "connecting" {
-		return
-	}
-	state.status = ""
-	state.err = ""
-	for _, session := range state.sessions {
-		if session != nil {
-			_ = session.Disconnect()
-		}
-	}
-	state.sessions = nil
 	start := state.containerStart
-	state.containerStart = -1
 	if start < 0 {
 		return
 	}
 	count := len(m.servers[srvIdx].Containers)
 	if state.containerCount > 0 {
 		count = state.containerCount
-		state.containerCount = 0
 	}
 	end := start + count
 	if start > len(m.containers) {
@@ -284,7 +269,7 @@ func (m *Model) disconnectServer(srvIdx int) {
 	m.clients = append(m.clients[:start], m.clients[end:]...)
 
 	for i := range m.serverStates {
-		if m.serverStates[i].status == "connected" && m.serverStates[i].containerStart > start {
+		if m.serverStates[i].containerStart > start {
 			m.serverStates[i].containerStart -= count
 		}
 	}
@@ -292,6 +277,24 @@ func (m *Model) disconnectServer(srvIdx int) {
 	if m.selected >= len(m.containers) {
 		m.selected = max(0, len(m.containers)-1)
 	}
+}
+
+func (m *Model) disconnectServer(srvIdx int) {
+	state := &m.serverStates[srvIdx]
+	if state.status != "connected" && state.status != "reconnecting" && state.status != "connecting" {
+		return
+	}
+	state.status = ""
+	state.err = ""
+	for _, session := range state.sessions {
+		if session != nil {
+			_ = session.Disconnect()
+		}
+	}
+	state.sessions = nil
+	m.removeServerContainers(srvIdx)
+	state.containerStart = -1
+	state.containerCount = 0
 }
 
 func (m *Model) disconnectAll() {
