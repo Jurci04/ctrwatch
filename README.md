@@ -98,6 +98,10 @@ Seven views, switchable with `←`/`→`:
 | Top | Running processes inside container |
 | Servers | Browse and connect to remote servers from config |
 
+In the unfocused log view, `m` opens a container selector with `[x]` checkboxes
+so you can pick which containers to watch in the split-screen panels. Toggle
+containers with `d` and focus one with `enter`.
+
 Keys:
 
 - `↑`/`↓`: select container
@@ -106,6 +110,7 @@ Keys:
 - `esc`: unfocus / clear filter
 - `s`: jump to servers view
 - `d`: toggle container log panel
+- `m`: open container selector (log view, unfocused)
 - `q`: quit
 
 ## Config
@@ -119,9 +124,9 @@ First run:
 ctrwatch config init
 ```
 
-Or open `ctrwatch`, switch to Servers, and press `i` to create `ctrwatch.yaml`
-from the TUI. Press `ctrl+a` in the TUI setup form to load SSH aliases from
-`~/.ssh/config`.
+Or open `ctrwatch`, switch to Servers, and press `e` to create `ctrwatch.yaml`
+from the TUI. Use `tab`/`shift+tab` to navigate fields, `ctrl+a` to cycle SSH
+aliases from `~/.ssh/config`, and `ctrl+p` to discover running containers.
 
 For SSH troubleshooting, run with `CTRWATCH_DEBUG=1`; debug logs are appended to
 `./logs/app.log`.

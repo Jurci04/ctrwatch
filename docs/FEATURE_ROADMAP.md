@@ -21,25 +21,37 @@ stay available for scripting.
 - **Small tool, boring setup**: config should be easy to create, easy to read,
   and compatible with normal SSH config aliases, keys, agents, and jump hosts.
 
+## Completed
+
+- Server state tracking: each server shows `local`, `connected`, `connecting`,
+  `reconnecting`, or `failed`. — **done**
+- Surface last SSH/runtime error in the servers view. — **done**
+- SSH tunnel supervisor with probe, reconnect, and bounded exponential backoff
+  (inlined, no dependency). — **done**
+- CLI `config init` multi-server loop and TUI setup wizard (`e` key). — **done**
+- Setup wizard textinput widget integration (cursor, scroll, placeholder,
+  focus/blur). — **done**
+- Setup form field navigation via `tab`/`shift+tab`, `enter` to save. — **done**
+- SSH alias cycling (`ctrl+a`) and container discovery (`ctrl+p`) in setup. — **done**
+- Socket detection hints only for localhost. — **done**
+- Log container selector (`m` key): checkbox list with `[x]`/`[ ]` to choose
+  which containers appear in the split-screen panels. — **done**
+- Binary: 7.6MB static, stripped, CGO_ENABLED=0, -trimpath. — **done**
+- Build dependencies removed: `backoff/v7`, `gopkg.in/check.v1`. — **done**
+- Ponytail audit cleanup: -15 lines (duplicate socketPath, dead line,
+  single-caller helpers). — **done**
+
 ## Next
 
 Ranked by expected value-to-effort ratio.
 
-### 1. SSH Reliability And Server State (mostly done)
+### 1. Stale Data Label While Reconnecting
 
-- Track each server as `local`, `connected`, `connecting`, `reconnecting`,
-  or `failed`. — **done**
-- Surface the last SSH/runtime error in the servers view. — **done**
-- Auto-reconnect dropped SSH tunnels with bounded exponential backoff. —
-  **done**
-- Keep stale container data visible while reconnecting, clearly marked
-  stale. — **still needed** (`TODO(tui)` in `model.go` and
-  `runtime_commands.go`)
-- Document that `host:` can be an SSH config alias, including `User`,
-  `IdentityFile`, `ProxyJump`, and agent-based auth. — **still needed**
+Keep stale container data visible while reconnecting, clearly marked
+stale. — **still needed** (`TODO(tui)` in `model.go` and
+`runtime_commands.go`)
 
 Effort: small (stale data labeling in view, one docs section).
-Tests: mock reconnect/fail transitions.
 
 ### 2. Container Name/ID Filter Across All Views
 
@@ -68,22 +80,14 @@ Tests: mock inspect/status data for unhealthy/restarting/stale cases.
 Effort: medium (new runtime method + streaming view).
 Tests: mock server emits timed events.
 
-### 5. First-run Config Setup (initial pass done)
+### 5. CLI `config add <host>` Shortcut
 
-Helps the user create a config when none exists.
+`ctrwatch config add <host> [--socket <path>] [--tag <tag>]` — CLI-only
+shortcut to add a server without the interactive init wizard.
 
-- `ctrwatch config init` — **done**
-- TUI setup wizard (press `i`) — **done**
-- `ctrwatch config add <host> [--socket <path>] [--tag <tag>]` — **still
-  needed** (CLI-only shortcut, no TUI equivalent yet)
-- Polish: validate socket path, offer to connect after save, show
-  connection result in the wizard.
-- Polish: list discovered SSH hosts in the wizard with auto-fill on select.
+Effort: small.
 
-Effort: small (remaining polish items are each 5–15 lines).
-Tests: extend setup-wizard test for validation and post-save feedback.
-
-### 7. Podman Manual Confidence Pass
+### 6. Podman Manual Confidence Pass
 
 Run and record a real Podman session before adding Podman connection discovery.
 
@@ -96,7 +100,7 @@ Run and record a real Podman session before adding Podman connection discovery.
 Effort: small (manual runbook and fixes for anything found).
 Tests: `CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh --runtime podman`.
 
-### 8. Table column sorting in PS view
+### 7. Table column sorting in PS view
 
 Click or key-triggered sort by name, status, CPU, memory, etc. in the TUI
 PS view.

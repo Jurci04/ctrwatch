@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -28,14 +29,12 @@ type serverTunnel struct {
 	started bool
 }
 
-func newServerTunnel(server, remoteSocket string) *serverTunnel {
+func NewServerTunnel(server, remoteSocket string) *serverTunnel {
 	return &serverTunnel{server: server, remoteSocket: remoteSocket}
 }
 
 func sshTunnel(host, remoteSocket string) (localSocket string, cleanup func(), err error) {
 	utils.Debugf("ssh tunnel start host=%q remoteSocket=%q", host, remoteSocket)
-	// TODO(tunnel): move ssh args into a small builder so ExitOnForwardFailure,
-	// ConnectTimeout, ServerAliveInterval, and BatchMode can be tuned together.
 	if _, err := exec.LookPath("ssh"); err != nil {
 		utils.Debugf("ssh tunnel missing ssh binary err=%v", err)
 		return "", nil, fmt.Errorf("ssh not found in PATH")
@@ -51,7 +50,14 @@ func sshTunnel(host, remoteSocket string) (localSocket string, cleanup func(), e
 	}
 	_ = os.Remove(localSocket)
 
-	cmd := exec.Command("ssh", "-L", localSocket+":"+remoteSocket, "-N", host)
+	cmd := exec.Command("ssh",
+		"-o", "ExitOnForwardFailure=yes",
+		"-o", "ConnectTimeout=10",
+		"-o", "ServerAliveInterval=30",
+		"-o", "BatchMode=yes",
+		"-L", localSocket+":"+remoteSocket,
+		"-N", host,
+	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -121,9 +127,22 @@ func sshTunnel(host, remoteSocket string) (localSocket string, cleanup func(), e
 	return "", nil, fmt.Errorf("ssh tunnel to %s: %s", host, detail)
 }
 
+func (tunnel *serverTunnel) dialAndReplace() error {
+	localSocket, cleanup, err := sshTunnel(tunnel.server, tunnel.remoteSocket)
+	if err != nil {
+		return err
+	}
+	tunnel.mu.Lock()
+	tunnel.localSocket = localSocket
+	tunnel.cleanup = cleanup
+	tunnel.state = "connected"
+	tunnel.lastErr = nil
+	tunnel.mu.Unlock()
+	utils.Debugf("server tunnel dialed host=%q remoteSocket=%q localSocket=%q", tunnel.server, tunnel.remoteSocket, localSocket)
+	return nil
+}
+
 func (tunnel *serverTunnel) Start() error {
-	// TODO(tunnel): split dial/start from supervision so reconnect can reuse the
-	// same dial path without duplicating socket setup or cleanup handling.
 	tunnel.mu.Lock()
 	if tunnel.started {
 		tunnel.mu.Unlock()
@@ -137,8 +156,7 @@ func (tunnel *serverTunnel) Start() error {
 	tunnel.mu.Unlock()
 	utils.Debugf("server tunnel state=connecting host=%q remoteSocket=%q", tunnel.server, tunnel.remoteSocket)
 
-	localSocket, cleanup, err := sshTunnel(tunnel.server, tunnel.remoteSocket)
-	if err != nil {
+	if err := tunnel.dialAndReplace(); err != nil {
 		tunnel.mu.Lock()
 		tunnel.state = "failed"
 		tunnel.lastErr = err
@@ -152,14 +170,6 @@ func (tunnel *serverTunnel) Start() error {
 		utils.Debugf("server tunnel state=failed host=%q remoteSocket=%q err=%v", tunnel.server, tunnel.remoteSocket, err)
 		return err
 	}
-
-	tunnel.mu.Lock()
-	tunnel.localSocket = localSocket
-	tunnel.cleanup = cleanup
-	tunnel.state = "connected"
-	tunnel.lastErr = nil
-	tunnel.mu.Unlock()
-	utils.Debugf("server tunnel state=ready host=%q remoteSocket=%q localSocket=%q", tunnel.server, tunnel.remoteSocket, localSocket)
 
 	go tunnel.supervisorLoop(ctx)
 	return nil
@@ -217,10 +227,9 @@ func (tunnel *serverTunnel) Socket() string {
 	return tunnel.localSocket
 }
 
+const tunnelProbeInterval = 10 * time.Second
+
 func (tunnel *serverTunnel) supervisorLoop(ctx context.Context) {
-	// TODO(tunnel): drive health checks from a reusable probe interval and keep
-	// the last healthy socket around so the session can mark stale data.
-	const checkInterval = 10 * time.Second
 	for {
 		if ctx.Err() != nil {
 			tunnel.cleanupActiveConnection()
@@ -228,7 +237,7 @@ func (tunnel *serverTunnel) supervisorLoop(ctx context.Context) {
 			return
 		}
 
-		ticker := time.NewTicker(checkInterval)
+		ticker := time.NewTicker(tunnelProbeInterval)
 		failed := false
 		for !failed {
 			select {
@@ -238,7 +247,7 @@ func (tunnel *serverTunnel) supervisorLoop(ctx context.Context) {
 				tunnel.setState("closed", nil)
 				return
 			case <-ticker.C:
-				if err := probeTunnel(tunnel.socketPath()); err != nil {
+				if err := probeTunnel(tunnel.Socket()); err != nil {
 					ticker.Stop()
 					tunnel.cleanupActiveConnection()
 					tunnel.setState("reconnecting", err)
@@ -259,26 +268,29 @@ func (tunnel *serverTunnel) supervisorLoop(ctx context.Context) {
 }
 
 func (tunnel *serverTunnel) reconnectLoop(ctx context.Context) error {
-	for attempt := 0; ; attempt++ {
-		// TODO(tunnel): add jittered exponential backoff with a hard cap and stop
-		// retrying immediately when the user has already canceled the session.
+	const maxDelay = 10 * time.Second
+	delay := 500 * time.Millisecond
+
+	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		localSocket, cleanup, err := sshTunnel(tunnel.server, tunnel.remoteSocket)
-		if err == nil {
-			tunnel.replaceConnection(localSocket, cleanup)
-			tunnel.setState("ready", nil)
-			utils.Debugf("server tunnel reconnected host=%q localSocket=%q", tunnel.server, localSocket)
+		if err := tunnel.dialAndReplace(); err == nil {
+			utils.Debugf("server tunnel reconnected host=%q localSocket=%q", tunnel.server, tunnel.localSocket)
 			return nil
+		} else {
+			tunnel.setState("reconnecting", err)
 		}
 
-		tunnel.setState("reconnecting", err)
-		utils.Debugf("server tunnel reconnect attempt=%d host=%q err=%v", attempt+1, tunnel.server, err)
-		if !waitContext(ctx, backoffDelay(attempt)) {
+		if !waitContext(ctx, delay) {
 			return ctx.Err()
 		}
+		delay = time.Duration(float64(delay) * 2)
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+		delay += time.Duration(float64(delay) * 0.25 * (rand.Float64()*2 - 1))
 	}
 }
 
@@ -306,19 +318,6 @@ func (tunnel *serverTunnel) cleanupActiveConnection() {
 	}
 }
 
-func (tunnel *serverTunnel) replaceConnection(localSocket string, cleanup func()) {
-	tunnel.mu.Lock()
-	tunnel.localSocket = localSocket
-	tunnel.cleanup = cleanup
-	tunnel.mu.Unlock()
-}
-
-func (tunnel *serverTunnel) socketPath() string {
-	tunnel.mu.Lock()
-	defer tunnel.mu.Unlock()
-	return tunnel.localSocket
-}
-
 func probeTunnel(socket string) error {
 	if socket == "" {
 		return fmt.Errorf("empty tunnel socket")
@@ -339,23 +338,6 @@ func probeTunnel(socket string) error {
 	resp := make([]byte, 32)
 	_, err = conn.Read(resp)
 	return err
-}
-
-func backoffDelay(attempt int) time.Duration {
-	if attempt < 0 {
-		attempt = 0
-	}
-	delay := 500 * time.Millisecond
-	for i := 0; i < attempt; i++ {
-		delay *= 2
-		if delay >= 30*time.Second {
-			return 30 * time.Second
-		}
-	}
-	if delay > 30*time.Second {
-		return 30 * time.Second
-	}
-	return delay
 }
 
 func waitContext(ctx context.Context, d time.Duration) bool {

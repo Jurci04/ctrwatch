@@ -27,7 +27,11 @@ func (m *Model) serverStateTick() tea.Cmd {
 }
 
 func (m *Model) streamLogs(client *runtime.Client, key, name string) {
-	lines, errs := client.StreamLogs(m.ctx, name, m.logOpts)
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.streamMu.Lock()
+	m.streamCancel[key] = cancel
+	m.streamMu.Unlock()
+	lines, errs := client.StreamLogs(ctx, name, m.logOpts)
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	var batch []runtime.LogLine
@@ -48,7 +52,7 @@ func (m *Model) streamLogs(client *runtime.Client, key, name string) {
 				m.linesCh <- batch
 				batch = nil
 			}
-		case <-m.ctx.Done():
+		case <-ctx.Done():
 			return
 		}
 	}
@@ -256,8 +260,13 @@ func (m *Model) removeServerContainers(srvIdx int) {
 		end = len(m.containers)
 	}
 
-	for _, name := range m.servers[srvIdx].Containers {
-		key := containerKey(runtime.RuntimeKind(m.servers[srvIdx].Socket), name)
+	for _, key := range m.containers[start:end] {
+		m.streamMu.Lock()
+		if cancel, ok := m.streamCancel[key]; ok {
+			cancel()
+			delete(m.streamCancel, key)
+		}
+		m.streamMu.Unlock()
 		delete(m.lines, key)
 		delete(m.stats, key)
 		delete(m.disabled, key)

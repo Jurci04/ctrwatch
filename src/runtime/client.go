@@ -19,13 +19,6 @@ type Client struct {
 	Runtime    string
 }
 
-func detectSocket() string {
-	for _, s := range ExistingDefaultSockets() {
-		return "unix://" + s
-	}
-	return "unix:///var/run/docker.sock"
-}
-
 func DefaultSockets() []string {
 	return []string{
 		"/var/run/docker.sock",
@@ -94,7 +87,8 @@ func RuntimeKind(addr string) string {
 // NewClient creates a Client connected to the first available daemon socket.
 // The socket is resolved from common local Docker and Podman socket paths.
 func NewClient() *Client {
-	return clientForAddr(detectSocket())
+	socks := ExistingDefaultSockets()
+	return clientForAddr("unix://" + socks[0])
 }
 
 // NewClientForSocket creates a Client connected to the given socket path.

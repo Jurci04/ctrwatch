@@ -2,13 +2,17 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"maps"
+	"strings"
+	"sync"
 	"time"
 
 	"ctrwatch/src/config"
 	"ctrwatch/src/runtime"
 	"ctrwatch/src/ssh"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -30,6 +34,8 @@ type Model struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	logOpts           runtime.LogOptions
+	streamCancel      map[string]context.CancelFunc
+	streamMu          sync.Mutex
 
 	view           viewType
 	containersInfo []containerListItem
@@ -43,11 +49,16 @@ type Model struct {
 	servers      []config.Server
 	serverStates []serverState
 
-	setupActive  bool
-	setupField   int
-	setupValues  [4]string
-	setupMessage string
-	setupHosts   []string
+	logSelectorOpen bool
+
+	setupActive   bool
+	setupField    int
+	setupInputs   [4]textinput.Model
+	setupMessage  string
+	setupHosts    []string
+	setupEditIdx  int // -1 = add new, >=0 = edit server at this index
+	setupHostIdx  int // current SSH alias index for cycling
+	detectedSocks []string
 }
 
 type serverState struct {
@@ -86,6 +97,7 @@ func NewModel(containers []string, clients []*runtime.Client, opts runtime.LogOp
 		disabled:          make(map[string]bool),
 		linesCh:           make(chan []runtime.LogLine, 64),
 		statsCh:           make(chan map[string]*runtime.ContainerStats, 4),
+		streamCancel:      make(map[string]context.CancelFunc),
 		width:             80,
 		height:            24,
 		ctx:               ctx,
@@ -140,7 +152,7 @@ func (m *Model) Init() tea.Cmd {
 	if len(m.servers) > 0 {
 		cmds = append(cmds, m.serverStateTick())
 	}
-	cmds = append(cmds, listenLogs(m.linesCh), listenStats(m.statsCh))
+	cmds = append(cmds, listenLogs(m.linesCh), listenStats(m.statsCh), textinput.Blink)
 	return tea.Batch(cmds...)
 }
 
@@ -181,12 +193,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "esc":
 			m.focused = false
+			m.logSelectorOpen = false
 			return m, tea.ClearScreen
 		case "down":
 			if m.view == viewServers && len(m.servers) > 0 {
 				m.selected = (m.selected + 1) % len(m.servers)
 			} else if len(m.containers) > 0 {
-				if m.view == viewLogs {
+				if m.view == viewLogs && m.focused {
 					m.selected = m.nextEnabled(1)
 				} else {
 					m.selected = (m.selected + 1) % len(m.containers)
@@ -197,7 +210,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == viewServers && len(m.servers) > 0 {
 				m.selected = (m.selected + len(m.servers) - 1) % len(m.servers)
 			} else if len(m.containers) > 0 {
-				if m.view == viewLogs {
+				if m.view == viewLogs && m.focused {
 					m.selected = m.nextEnabled(-1)
 				} else {
 					m.selected = (m.selected + len(m.containers) - 1) % len(m.containers)
@@ -224,14 +237,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.focused = !m.focused
 			return m, tea.ClearScreen
+		case "m":
+			if m.view == viewLogs && !m.focused {
+				m.logSelectorOpen = !m.logSelectorOpen
+			}
 		case "s":
 			if len(m.servers) > 0 && m.view != viewServers {
 				m.view = viewServers
 				return m, m.onViewChanged()
 			}
-		case "i":
-			if m.view == viewServers && len(m.servers) == 0 {
-				m.startSetup()
+		case "e":
+			if m.view == viewServers {
+				if len(m.servers) > 0 && m.selected < len(m.servers) {
+					m.startEditSetup(m.selected)
+				} else {
+					m.startSetup()
+				}
 			}
 		case "d":
 			if m.view == viewServers {
@@ -296,6 +317,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// so reconnecting/failed rows stay visible without user interaction.
 		if m.view == viewServers && len(m.servers) > 0 {
 			return m, m.serverStateTick()
+		}
+
+	case discoveredContainersMsg:
+		if msg.err != nil {
+			m.setupMessage = fmt.Sprintf("discovery: %v", msg.err)
+		} else if len(msg.names) > 0 {
+			existing := config.SplitList(m.setupInputs[2].Value())
+			seen := map[string]bool{}
+			for _, n := range existing {
+				seen[n] = true
+			}
+			for _, n := range msg.names {
+				if !seen[n] {
+					existing = append(existing, n)
+					seen[n] = true
+				}
+			}
+			m.setupInputs[2].SetValue(strings.Join(existing, ", "))
+			m.setupMessage = fmt.Sprintf("populated %d containers from %s", len(msg.names), msg.socket)
+		} else {
+			m.setupMessage = "no running containers found"
 		}
 
 	case serverConnectMsg:

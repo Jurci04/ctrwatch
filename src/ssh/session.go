@@ -11,12 +11,10 @@ import (
 type ServerSession struct {
 	server config.Server
 
-	// TODO(session): promote reconnect state here so the UI can render
-	// stale/failed server status without reaching into tunnel internals.
 	mu      sync.Mutex
 	tunnel  *serverTunnel
 	client  *runtime.Client
-	state   string
+	state   string // "connecting", "connected", "reconnecting", "failed", "closed"
 	lastErr error
 }
 
@@ -37,8 +35,25 @@ func (s *ServerSession) Connect() (*runtime.Client, error) {
 		utils.Debugf("ssh session reuse connected host=%q socket=%q", s.server.Host, s.server.Socket)
 		return client, nil
 	}
-	// TODO(session): if the tunnel already exists, reuse its live socket and
-	// only rebuild the runtime client when the transport actually changes.
+	if s.tunnel != nil {
+		// reuse existing tunnel if it is still alive
+		if s.tunnel.State() == "connected" {
+			client := runtime.NewClientForSocket(s.tunnel.Socket())
+			client.Runtime = runtime.RuntimeKind(s.server.Socket)
+			s.client = client
+			s.state = "connected"
+			s.lastErr = nil
+			s.mu.Unlock()
+			utils.Debugf("ssh session reuse connected tunnel host=%q socket=%q", s.server.Host, s.server.Socket)
+			return client, nil
+		}
+		// otherwise, stop the existing tunnel and start a new one
+		if err := s.tunnel.Stop(); err != nil {
+			utils.Debugf("ssh session stop failed host=%q socket=%q err=%v", s.server.Host, s.server.Socket, err)
+		}
+		s.tunnel = nil
+		s.client = nil
+	}
 	s.state = "connecting"
 	s.lastErr = nil
 	s.mu.Unlock()
@@ -46,7 +61,7 @@ func (s *ServerSession) Connect() (*runtime.Client, error) {
 	client := runtime.NewClientForSocket(s.server.Socket)
 
 	if !config.IsLocalHost(s.server.Host) {
-		tunnel := newServerTunnel(s.server.Host, s.server.Socket)
+		tunnel := NewServerTunnel(s.server.Host, s.server.Socket)
 		if err := tunnel.Start(); err != nil {
 			s.mu.Lock()
 			s.state = "failed"
@@ -64,12 +79,7 @@ func (s *ServerSession) Connect() (*runtime.Client, error) {
 
 	s.mu.Lock()
 	s.client = client
-	// TODO(session): keep the last failure reason around separately from a
-	// successful connect so reconnecting/failed can be shown in the servers view.
-	if s.state != "failed" {
-		s.state = "connected"
-	}
-	s.lastErr = nil
+	s.state = "connected"
 	s.mu.Unlock()
 
 	utils.Debugf("ssh session connected host=%q socket=%q runtime=%q clientSocket=%q", s.server.Host, s.server.Socket, client.Runtime, client.SocketPath)
@@ -79,7 +89,6 @@ func (s *ServerSession) Connect() (*runtime.Client, error) {
 func (s *ServerSession) Disconnect() error {
 	s.mu.Lock()
 	tunnel := s.tunnel
-	client := s.client
 	s.tunnel = nil
 	s.client = nil
 	s.state = "closed"
@@ -93,7 +102,6 @@ func (s *ServerSession) Disconnect() error {
 		}
 	}
 	utils.Debugf("ssh session disconnected host=%q socket=%q", s.server.Host, s.server.Socket)
-	_ = client
 	return nil
 }
 

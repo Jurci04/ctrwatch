@@ -11,7 +11,7 @@ import (
 
 func TestRunConfigInitCreatesConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ctrwatch.yaml")
-	input := strings.NewReader("n\nprod-api\n/run/podman/podman.sock\napi, worker\ndev, prod\n")
+	input := strings.NewReader("n\nprod-api\n/run/podman/podman.sock\napi, worker\ndev, prod\nn\n")
 	var output strings.Builder
 
 	if err := runConfigInit([]string{"--output", path}, input, &output); err != nil {

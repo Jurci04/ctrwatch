@@ -56,11 +56,6 @@ func runConfigInit(args []string, in io.Reader, out io.Writer) error {
 	if fs.NArg() != 0 {
 		return fmt.Errorf("usage: ctrwatch config init [--output path]")
 	}
-	if _, err := os.Stat(*output); err == nil {
-		return fmt.Errorf("config: %s already exists", *output)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("config: %w", err)
-	}
 
 	r := bufio.NewReader(in)
 	_, _ = fmt.Fprintf(out, "Creating %s\n", *output)
@@ -68,41 +63,48 @@ func runConfigInit(args []string, in io.Reader, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if yes(readSSH) {
+	if readSSH == "y" || readSSH == "yes" {
 		if hosts, err := cfgpkg.SSHConfigHosts(); err == nil && len(hosts) > 0 {
 			_, _ = fmt.Fprintf(out, "SSH hosts: %s\n", strings.Join(hosts, ", "))
 		}
 	}
 
-	host, err := prompt(out, r, "Host [localhost]", "localhost")
-	if err != nil {
-		return err
-	}
-	socket, err := prompt(out, r, "Socket [default runtime socket]", "")
-	if err != nil {
-		return err
-	}
-	containerText, err := promptRequired(out, r, "Containers (comma-separated)")
-	if err != nil {
-		return err
-	}
-	tagText, err := prompt(out, r, "Tags [dev]", "dev")
-	if err != nil {
-		return err
-	}
-	containers := cfgpkg.SplitList(containerText)
-	tags := cfgpkg.SplitList(tagText)
+	var servers []cfgpkg.Server
+	for {
+		host, err := prompt(out, r, "Host [localhost]", "localhost")
+		if err != nil {
+			return err
+		}
+		socket, err := prompt(out, r, "Socket [default runtime socket]", "")
+		if err != nil {
+			return err
+		}
+		containerText, err := promptRequired(out, r, "Containers (comma-separated)")
+		if err != nil {
+			return err
+		}
+		tagText, err := prompt(out, r, "Tags [dev]", "dev")
+		if err != nil {
+			return err
+		}
+		servers = append(servers, cfgpkg.Server{
+			Host:       host,
+			Socket:     socket,
+			Containers: cfgpkg.SplitList(containerText),
+			Tags:       cfgpkg.SplitList(tagText),
+		})
 
-	cfg := &cfgpkg.Config{Servers: []cfgpkg.Server{{
-		Host:       host,
-		Socket:     socket,
-		Containers: containers,
-		Tags:       tags,
-	}}}
+		more, err := prompt(out, r, "Add another server? [y/N]", "")
+		if err != nil || (more != "y" && more != "yes") {
+			break
+		}
+	}
+
+	cfg := &cfgpkg.Config{Servers: servers}
 	if err := cfgpkg.Save(*output, cfg); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(out, "Wrote %s\n", *output)
+	_, _ = fmt.Fprintf(out, "Wrote %s (%d servers)\n", *output, len(cfg.Servers))
 	return nil
 }
 
@@ -127,9 +129,4 @@ func promptRequired(out io.Writer, r *bufio.Reader, label string) (string, error
 		}
 		_, _ = fmt.Fprintln(out, "Required.")
 	}
-}
-
-func yes(value string) bool {
-	value = strings.ToLower(strings.TrimSpace(value))
-	return value == "y" || value == "yes"
 }

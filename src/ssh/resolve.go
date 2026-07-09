@@ -19,6 +19,9 @@ type ResolvedServer struct {
 	Runtime    string
 }
 
+// resolve a server by connecting to it and checking for the configured containers.
+// If the server has a socket configured, it will be used directly.
+// Otherwise, the default sockets will be tried in order.
 func ResolveServer(server config.Server) ([]ResolvedServer, error) {
 	if server.Socket != "" {
 		session := NewServerSession(server)
@@ -89,6 +92,7 @@ func ResolveServer(server config.Server) ([]ResolvedServer, error) {
 
 var findContainersOnSocket = containersOnSocket
 
+// Returns the subset of container names that are running on the given socket.
 func containersOnSocket(client *runtime.Client, names []string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -111,6 +115,7 @@ func containersOnSocket(client *runtime.Client, names []string) ([]string, error
 	return found, nil
 }
 
+// check if remote socket exists throuh: ssh <host> test -S <socket>
 func remoteSocketExists(host, socket string) bool {
 	return exec.Command("ssh", "-o", "ConnectTimeout=5", host, "test", "-S", socket).Run() == nil
 }

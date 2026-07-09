@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"ctrwatch/src/config"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -15,12 +17,11 @@ func (m *Model) viewServers(bodyHeight, panelW int) string {
 	if len(m.servers) == 0 {
 		return lipgloss.NewStyle().Width(innerW).
 			Italic(true).Foreground(lipgloss.Color("8")).
-			Render("no servers configured — press i to create ctrwatch.yaml")
+			Render("no servers configured — press e to add one")
 	}
 
-	var lines []string
-	header := fmt.Sprintf("%-3s %-20s %-28s %-8s %s", "#", "HOST", "SOCKET", "STATUS", "CONTAINERS")
-	lines = append(lines, header)
+	lines := make([]string, 0, bodyHeight)
+	lines = append(lines, fmt.Sprintf("%-3s %-20s %-28s %-8s %s", "#", "HOST", "SOCKET", "STATUS", "CONTAINERS"))
 	lines = append(lines, strings.Repeat("─", innerW))
 
 	for i, s := range m.servers {
@@ -73,37 +74,51 @@ func (m *Model) viewServers(bodyHeight, panelW int) string {
 
 func (m *Model) viewConfigSetup(bodyHeight, innerW int) string {
 	labels := []string{"Host", "Socket", "Containers", "Tags"}
-	hints := []string{"localhost or SSH alias", "blank = default runtime socket", "comma-separated", "comma-separated"}
-	var lines []string
-	lines = append(lines, "Create ctrwatch.yaml")
+	lines := make([]string, 0, bodyHeight)
+	var title string
+	if m.setupEditIdx >= 0 {
+		s := m.servers[m.setupEditIdx]
+		host := s.Host
+		if host == "" {
+			host = "localhost"
+		}
+		title = lipgloss.NewStyle().Bold(true).Render("✎ Edit server") + fmt.Sprintf("  %s (%d containers)", host, len(s.Containers))
+	} else {
+		title = lipgloss.NewStyle().Bold(true).Render("＋ Add server")
+	}
+	lines = append(lines, title)
 	lines = append(lines, strings.Repeat("─", innerW))
 	for i, label := range labels {
 		marker := "  "
 		if i == m.setupField {
 			marker = "● "
 		}
-		value := m.setupValues[i]
-		if value == "" {
-			value = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(hints[i])
-		}
-		lines = append(lines, truncate(fmt.Sprintf("%s%-11s %s", marker, label+":", value), innerW))
+		field := lipgloss.NewStyle().Width(max(innerW-2, 1)).Render(
+			marker + label + ": " + m.setupInputs[i].View())
+		lines = append(lines, field)
 	}
-	if len(m.setupHosts) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, truncate("SSH hosts: "+strings.Join(m.setupHosts, ", "), innerW))
+
+	if m.setupField == 1 && len(m.detectedSocks) > 0 && config.IsLocalHost(m.setupInputs[0].Value()) {
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(
+			"   detected: "+strings.Join(m.detectedSocks, ", ")))
+	}
+	if m.setupField == 0 && len(m.setupHosts) > 0 {
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(
+			fmt.Sprintf("   SSH aliases: %d available (ctrl+a to cycle)", len(m.setupHosts))))
 	}
 	if m.setupMessage != "" {
 		lines = append(lines, "")
-		lines = append(lines, truncate(m.setupMessage, innerW))
+		lines = append(lines, m.setupMessage)
 	}
 	lines = append(lines, "")
 	lines = append(lines, lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("8")).
-		Render("tab next, ctrl+a aliases, enter save, esc cancel"))
+		Render("tab next · ctrl+a aliases · ctrl+p discover · enter save · esc cancel"))
+	lipW := lipgloss.NewStyle().Width(innerW)
 	for len(lines) < bodyHeight {
-		lines = append(lines, "")
+		lines = append(lines, lipW.Render(""))
 	}
 	if len(lines) > bodyHeight {
 		lines = lines[:bodyHeight]
 	}
-	return lipgloss.NewStyle().Width(innerW).Render(strings.Join(lines, "\n"))
+	return strings.Join(lines, "\n")
 }

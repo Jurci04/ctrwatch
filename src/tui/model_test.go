@@ -332,7 +332,7 @@ func TestServerViewCanCreateConfig(t *testing.T) {
 	m := NewModel(nil, nil, runtime.LogOptions{}, 0)
 	m.view = viewServers
 
-	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	m = model.(*Model)
 	if !m.setupActive {
 		t.Fatal("setup did not start")

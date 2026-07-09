@@ -58,24 +58,23 @@ func colorLogLine(line visibleLogLine) string {
 	return keywordReplacer.Replace(line.text)
 }
 
+// ponytail: lipgloss borders produce double ││ when content already has pipe
+// chars, Height(n) controls only the content area (not total), and Height
+// doesn't truncate overflow — so we keep the hand-rolled ╭╮╰╯│ box layout.
 var keywordReplacer = strings.NewReplacer(
-	"CRITICAL", ansiColor("9")+"CRITICAL"+ansiReset,
-	"critical", ansiColor("9")+"critical"+ansiReset,
-	"ERROR", ansiColor("9")+"ERROR"+ansiReset,
-	"error", ansiColor("9")+"error"+ansiReset,
-	"WARNING", ansiColor("11")+"WARNING"+ansiReset,
-	"warning", ansiColor("11")+"warning"+ansiReset,
-	"WARN", ansiColor("11")+"WARN"+ansiReset,
-	"warn", ansiColor("11")+"warn"+ansiReset,
-	"INFO", ansiColor("10")+"INFO"+ansiReset,
-	"info", ansiColor("10")+"info"+ansiReset,
-	"DEBUG", ansiColor("12")+"DEBUG"+ansiReset,
-	"debug", ansiColor("12")+"debug"+ansiReset,
+	"CRITICAL", "\x1b[91mCRITICAL\x1b[0m",
+	"critical", "\x1b[91mcritical\x1b[0m",
+	"ERROR", "\x1b[91mERROR\x1b[0m",
+	"error", "\x1b[91merror\x1b[0m",
+	"WARNING", "\x1b[93mWARNING\x1b[0m",
+	"warning", "\x1b[93mwarning\x1b[0m",
+	"WARN", "\x1b[93mWARN\x1b[0m",
+	"warn", "\x1b[93mwarn\x1b[0m",
+	"INFO", "\x1b[92mINFO\x1b[0m",
+	"info", "\x1b[92minfo\x1b[0m",
+	"DEBUG", "\x1b[94mDEBUG\x1b[0m",
+	"debug", "\x1b[94mdebug\x1b[0m",
 )
-
-func ansiColor(n string) string { return "\x1b[38;5;" + n + "m" }
-
-const ansiReset = "\x1b[0m"
 
 func visibleLogLines(buf []runtime.LogLine, limit, width int) []visibleLogLine {
 	if limit <= 0 {

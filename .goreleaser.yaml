@@ -12,6 +12,8 @@ builds:
       - arm64
     ldflags:
       - -s -w
+    flags:
+      - -trimpath
 archives:
   - format: tar.gz
     name_template: >-

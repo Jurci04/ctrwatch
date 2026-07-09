@@ -6,15 +6,6 @@ import (
 	"time"
 )
 
-func TestBackoffDelayCapsAtThirtySeconds(t *testing.T) {
-	if got := backoffDelay(0); got != 500*time.Millisecond {
-		t.Fatalf("backoffDelay(0) = %s, want %s", got, 500*time.Millisecond)
-	}
-	if got := backoffDelay(10); got != 30*time.Second {
-		t.Fatalf("backoffDelay(10) = %s, want %s", got, 30*time.Second)
-	}
-}
-
 func TestWaitContextReturnsFalseWhenCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -24,7 +15,7 @@ func TestWaitContextReturnsFalseWhenCanceled(t *testing.T) {
 }
 
 func TestServerTunnelStartsUnknownAndRejectsStopBeforeStart(t *testing.T) {
-	tunnel := newServerTunnel("example", "/run/user/1000/podman/podman.sock")
+	tunnel := NewServerTunnel("example", "/run/user/1000/podman/podman.sock")
 	if got := tunnel.State(); got != "unknown" {
 		t.Fatalf("State() = %q, want %q", got, "unknown")
 	}

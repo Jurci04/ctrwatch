@@ -29,6 +29,7 @@ go.work.sum
 
 # user config (contains server addresses and credentials)
 ctrwatch.yaml
+*.bak
 
 # goreleaser output
 dist/

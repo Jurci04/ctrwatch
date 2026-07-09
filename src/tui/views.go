@@ -48,9 +48,9 @@ func (m *Model) View() string {
 	head := fmt.Sprintf(" ctrwatch  %s  ", mode)
 	nav := "←→ views  ↑↓ sel  enter focus  s servers  d hide  esc unfocus  q quit"
 	if m.view == viewServers {
-		nav = "←→ views  ↑↓ sel  enter connect  d disconnect  q quit"
+		nav = "←→ views  ↑↓ sel  enter connect  d disconnect  e edit  q quit"
 		if len(m.servers) == 0 {
-			nav = "i setup config  ←→ views  q quit"
+			nav = "e add server  ←→ views  q quit"
 		}
 	}
 	var footer string
@@ -117,7 +117,7 @@ func (m *Model) viewPS(bodyHeight, panelW int) string {
 		}
 	}
 
-	var body []string
+	body := make([]string, 0, bodyHeight)
 	body = append(body, "│"+style.Render(truncate(psRow("    ", "RT", "NAME", "ID", "IMAGE", "STATE", "STATUS"), innerW))+"│")
 
 	start, end := visibleRange(len(m.containers), max(bodyHeight-3, 1), m.selected)
@@ -203,7 +203,7 @@ func (m *Model) viewStats(bodyHeight, panelW int) string {
 		}
 		top, bottom := boxBorder(" Detail: "+title, innerW)
 		style := lipgloss.NewStyle().Width(innerW)
-		var body []string
+		body := make([]string, 0, bodyHeight)
 
 		detail := m.inspect
 		if detail != nil {

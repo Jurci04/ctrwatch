@@ -57,3 +57,9 @@ type containerListItem struct {
 	Client    *runtime.Client
 	Container runtime.Container
 }
+
+type discoveredContainersMsg struct {
+	names  []string
+	socket string
+	err    error
+}
