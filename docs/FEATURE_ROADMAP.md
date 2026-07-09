@@ -21,113 +21,25 @@ stay available for scripting.
 - **Small tool, boring setup**: config should be easy to create, easy to read,
   and compatible with normal SSH config aliases, keys, agents, and jump hosts.
 
-## Completed
-
-### Phase 1: Default TUI
-
-- `ctrwatch` with no args opens the TUI.
-- Loads configured containers from `ctrwatch.yaml` (first tag). Falls back to
-  empty TUI with helpful message when no config exists.
-- Auto-detects local Docker/Podman containers on startup.
-- `ctrwatch help` still prints usage. All direct commands unchanged.
-
-### Phase 2: TUI Navigation And Views
-
-- Seven switchable views: logs, ps, inspect, stats, diff, top, servers.
-- `←`/`→` switch views, `↑`/`↓` cycle containers, `enter` focuses, `esc` backs
-  out. `s` jumps to servers view. `d` toggles container log panel.
-- Context-aware footer shows relevant keybindings per view.
-- All views share the same bordered-panel style (`╭─ title ─╮`) for visual
-  consistency.
-- View tests for PS table, inspect metadata, stats table, view switching, empty
-  state, and focused/esc behavior.
-
-### Phase 3: Shared Data Paths
-
-- TUI model owns `[]*runtime.Client` and fetches data on demand via `tea.Cmd`.
-- Log streaming and stats polling goroutines live in the model.
-- Multiple servers supported simultaneously via SSH tunnels.
-
-### Phase 4: Runtime Confidence
-
-- Runtime client supports TCP (`tcp://`, `http://`) in addition to Unix sockets.
-- Mock E2E tests run against both TCP and Unix socket transports (33 tests).
-- Real-container integration tests (`CTRWATCH_INTEGRATION=1`) work with Docker
-  and Podman.
-- Runtime selection is explicit through config sockets or `name@socket`
-  arguments.
-- Configured local and remote servers can point at separate Docker and Podman
-  sockets at the same time.
-- TUI rows show the runtime source (`docker`, `podman`, `tcp`, or fallback
-  `runtime`) so mixed container lists stay readable.
-- Local config entries connect automatically on startup; remote entries remain
-  explicit in the Servers view.
-- Real-container E2E tests support `--runtime docker|podman` to avoid mixing
-  runtimes when both are installed.
-
-### Phase 5: Views Expansion
-
-- **Container diff / changes view**: filesystem changes since container start.
-- **Container top / processes view**: running processes inside a container.
-- **Historical stats sparkline**: last N CPU samples rendered as ASCII sparkline
-  in the stats view.
-- **JSON output**: `inspect --json` and `stats --json` provide pipeable
-  machine-readable output.
-
-### Phase 6: Server Browser
-
-- Config file servers listed in a dedicated view.
-- Press enter to SSH-connect to a server and browse its containers.
-- Multiple servers can be connected simultaneously.
-- Local containers always auto-detected on startup.
-
-### Phase 7: UI/UX Polish
-
-- Keyword-only log coloring (not whole-line red).
-- Unified `●` marker across all views.
-- Removed `watch` command (redundant with default TUI).
-- Simplified keybindings (removed ctrl+c, space, tab, a).
-- Context-aware key hints in footer.
-
-### Phase 8: Repo Hygiene
-
-- Install instructions use the correct `Jurci04/ctrwatch` owner.
-- README has CI, release, and Go Report Card badges.
-- CI runs `gofmt`, `go vet`, `go test -race`, and `golangci-lint`.
-- The mock E2E server binary is built from source and ignored instead of
-  committed.
-- Mock E2E TUI smoke test uses a PTY and exits cleanly after cleanup.
-
-### SSH Lifecycle Ownership
-
-- `ServerSession` is now the public SSH interface for connect, disconnect,
-  state, socket, and last-error access.
-- The tunnel implementation is private and owns bounded reconnect with the
-  runtime ping probe.
-- TUI and config resolution both use the session abstraction instead of
-  calling the tunnel helper directly.
-- Added focused SSH session/tunnel tests for core state and helper behavior.
-- Container selection is clamped after connect/disconnect events so stale
-  server selections cannot panic the TUI.
-
 ## Next
 
 Ranked by expected value-to-effort ratio.
 
-### 1. SSH Reliability And Server State
+### 1. SSH Reliability And Server State (mostly done)
 
-Make remote monitoring reliable enough to leave open all day.
-
-- Track each server as `local`, `connected`, `connecting`, `reconnecting`, or
-  `failed`.
-- Surface the last SSH/runtime error in the servers view.
-- Auto-reconnect dropped SSH tunnels with bounded exponential backoff.
-- Keep stale container data visible while reconnecting, clearly marked stale.
+- Track each server as `local`, `connected`, `connecting`, `reconnecting`,
+  or `failed`. — **done**
+- Surface the last SSH/runtime error in the servers view. — **done**
+- Auto-reconnect dropped SSH tunnels with bounded exponential backoff. —
+  **done**
+- Keep stale container data visible while reconnecting, clearly marked
+  stale. — **still needed** (`TODO(tui)` in `model.go` and
+  `runtime_commands.go`)
 - Document that `host:` can be an SSH config alias, including `User`,
-  `IdentityFile`, `ProxyJump`, and agent-based auth.
+  `IdentityFile`, `ProxyJump`, and agent-based auth. — **still needed**
 
-Effort: medium (server state model, reconnect command, visible status).
-Tests: model update tests for state transitions; mock failing reconnect path.
+Effort: small (stale data labeling in view, one docs section).
+Tests: mock reconnect/fail transitions.
 
 ### 2. Container Name/ID Filter Across All Views
 
@@ -156,20 +68,20 @@ Tests: mock inspect/status data for unhealthy/restarting/stale cases.
 Effort: medium (new runtime method + streaming view).
 Tests: mock server emits timed events.
 
-### 5. First-run Config Setup
+### 5. First-run Config Setup (initial pass done)
 
-When no config exists, help the user create one instead of only showing an
-empty state.
+Helps the user create a config when none exists.
 
-- Add `ctrwatch config init` to write a minimal `ctrwatch.yaml`.
-- Add `ctrwatch config add <host> [--socket <path>] [--tag <tag>]`.
-- In the empty TUI, point to the exact command to add a local or SSH server.
+- `ctrwatch config init` — **done**
+- TUI setup wizard (press `i`) — **done**
+- `ctrwatch config add <host> [--socket <path>] [--tag <tag>]` — **still
+  needed** (CLI-only shortcut, no TUI equivalent yet)
+- Polish: validate socket path, offer to connect after save, show
+  connection result in the wizard.
+- Polish: list discovered SSH hosts in the wizard with auto-fill on select.
 
-Effort: small (config write helpers, command wiring).
-Tests: temp-dir config write tests.
-
-Effort: small (add flag, pass through config path).
-Tests: test flag overrides env var.
+Effort: small (remaining polish items are each 5–15 lines).
+Tests: extend setup-wizard test for validation and post-save feedback.
 
 ### 7. Podman Manual Confidence Pass
 

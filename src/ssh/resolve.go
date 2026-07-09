@@ -3,6 +3,7 @@ package ssh
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -46,24 +47,28 @@ func ResolveServer(server config.Server) ([]ResolvedServer, error) {
 	candidates := runtime.DefaultSockets()
 	if config.IsLocalHost(server.Host) {
 		candidates = runtime.ExistingDefaultSockets()
-	} else {
-		candidates = candidates[:1]
 	}
 
-	var resolved []ResolvedServer
-	var errs []string
+	var firstErr error
 	for _, socket := range candidates {
+		if !config.IsLocalHost(server.Host) && !remoteSocketExists(server.Host, socket) {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%s: remote socket not found", socket)
+			}
+			continue
+		}
 		candidate := server
 		candidate.Socket = socket
 		session := NewServerSession(candidate)
 		client, err := session.Connect()
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", socket, err))
+			if firstErr == nil {
+				firstErr = err
+			}
 			continue
 		}
 		found, err := findContainersOnSocket(client, server.Containers)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", socket, err))
 			_ = session.Disconnect()
 			continue
 		}
@@ -71,21 +76,15 @@ func ResolveServer(server config.Server) ([]ResolvedServer, error) {
 			_ = session.Disconnect()
 			continue
 		}
-		resolved = append(resolved, ResolvedServer{
+		return []ResolvedServer{{
 			Server:     candidate,
 			Session:    session,
 			Client:     client,
 			Containers: found,
 			Runtime:    client.Runtime,
-		})
+		}}, nil
 	}
-	if len(resolved) == 0 {
-		if len(errs) > 0 {
-			return nil, fmt.Errorf("no configured containers found; %s", strings.Join(errs, "; "))
-		}
-		return nil, fmt.Errorf("no configured containers found")
-	}
-	return resolved, nil
+	return nil, firstErr
 }
 
 var findContainersOnSocket = containersOnSocket
@@ -110,4 +109,8 @@ func containersOnSocket(client *runtime.Client, names []string) ([]string, error
 		}
 	}
 	return found, nil
+}
+
+func remoteSocketExists(host, socket string) bool {
+	return exec.Command("ssh", "-o", "ConnectTimeout=5", host, "test", "-S", socket).Run() == nil
 }

@@ -156,7 +156,7 @@ func (tunnel *serverTunnel) Start() error {
 	tunnel.mu.Lock()
 	tunnel.localSocket = localSocket
 	tunnel.cleanup = cleanup
-	tunnel.state = "ready"
+	tunnel.state = "connected"
 	tunnel.lastErr = nil
 	tunnel.mu.Unlock()
 	utils.Debugf("server tunnel state=ready host=%q remoteSocket=%q localSocket=%q", tunnel.server, tunnel.remoteSocket, localSocket)
