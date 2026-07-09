@@ -46,6 +46,8 @@ func ResolveServer(server config.Server) ([]ResolvedServer, error) {
 	candidates := runtime.DefaultSockets()
 	if config.IsLocalHost(server.Host) {
 		candidates = runtime.ExistingDefaultSockets()
+	} else {
+		candidates = candidates[:1]
 	}
 
 	var resolved []ResolvedServer
