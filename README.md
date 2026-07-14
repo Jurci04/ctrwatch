@@ -86,30 +86,29 @@ ctrwatch config check
 
 ## TUI
 
-Seven views, switchable with `←`/`→`:
+Four views, switchable with `←`/`→`:
 
 | View | Description |
 |------|-------------|
 | Logs | Live log output, split-screen for focused container |
 | PS | Container list with name, ID, image, state, status |
-| Inspect | Container metadata — overview, mounts, config, ports |
-| Stats | CPU/memory per container with sparkline history |
-| Diff | Filesystem changes since container start |
-| Top | Running processes inside container |
+| Stats | CPU/memory list; focus a container for inspect, diff, and processes |
 | Servers | Browse and connect to remote servers from config |
 
-In the unfocused log view, `m` opens a container selector with `[x]` checkboxes
-so you can pick which containers to watch in the split-screen panels. Toggle
-containers with `d` and focus one with `enter`.
+Press `m` in the unfocused log view to open a container selector with `[x]`
+checkboxes. Only checked containers appear in the split-screen panels. Hidden
+containers are removed from the panel view entirely — they only live in the
+selector until re-enabled with `d`. `enter` focuses one container for
+full-panel logs.
 
 Keys:
 
 - `↑`/`↓`: select container
 - `←`/`→`: switch view
 - `enter`: focus/unfocus selected container
-- `esc`: unfocus / clear filter
+- `esc`: unfocus / close container selector
 - `s`: jump to servers view
-- `d`: toggle container log panel
+- `d`: toggle container visibility (log view)
 - `m`: open container selector (log view, unfocused)
 - `q`: quit
 
@@ -132,6 +131,7 @@ For SSH troubleshooting, run with `CTRWATCH_DEBUG=1`; debug logs are appended to
 `./logs/app.log`.
 
 ```yaml
+interval: 10s
 servers:
   - host: localhost
     socket: /var/run/docker.sock
@@ -153,6 +153,8 @@ servers:
       - jobs
     tags: [prod]
 ```
+
+`interval` controls TUI stats polling and defaults to `10s` when omitted.
 
 `host: localhost`, `host: 127.0.0.1`, or an omitted `host` means local runtime.
 Remote hosts use SSH and the configured runtime socket.

@@ -79,6 +79,36 @@ func TestFocusClearsScreenButTabDoesNot(t *testing.T) {
 	}
 }
 
+func TestLogSelectorControlsVisiblePanels(t *testing.T) {
+	m := testModel([]string{"api", "worker"})
+	m.width = 80
+	m.height = 16
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+
+	selector := m.viewLogSelector(12, 78)
+	if !strings.Contains(selector, "[ ] api") || !strings.Contains(selector, "d toggle") {
+		t.Fatalf("selector missing hidden container or help:\n%s", selector)
+	}
+	if !strings.Contains(m.View(), "m/esc back") {
+		t.Fatalf("selector footer missing mode-specific help:\n%s", m.View())
+	}
+	panels := m.viewLogPanels(12, 78)
+	if strings.Contains(panels, "] api") || !strings.Contains(panels, "] worker") {
+		t.Fatalf("panels did not exclude hidden container:\n%s", panels)
+	}
+
+	m.view = viewPS
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if m.disabled[m.containers[1]] {
+		t.Fatal("d changed log visibility outside the logs view")
+	}
+	if strings.Contains(m.View(), "d hide") {
+		t.Fatalf("PS footer advertises a log-only key:\n%s", m.View())
+	}
+}
+
 func TestViewSwitching(t *testing.T) {
 	m := testModel([]string{"api", "worker"})
 	if m.view != viewLogs {

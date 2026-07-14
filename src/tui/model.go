@@ -199,7 +199,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == viewServers && len(m.servers) > 0 {
 				m.selected = (m.selected + 1) % len(m.servers)
 			} else if len(m.containers) > 0 {
-				if m.view == viewLogs && m.focused {
+				if m.view == viewLogs && (!m.logSelectorOpen || m.focused) {
 					m.selected = m.nextEnabled(1)
 				} else {
 					m.selected = (m.selected + 1) % len(m.containers)
@@ -210,7 +210,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == viewServers && len(m.servers) > 0 {
 				m.selected = (m.selected + len(m.servers) - 1) % len(m.servers)
 			} else if len(m.containers) > 0 {
-				if m.view == viewLogs && m.focused {
+				if m.view == viewLogs && (!m.logSelectorOpen || m.focused) {
 					m.selected = m.nextEnabled(-1)
 				} else {
 					m.selected = (m.selected + len(m.containers) - 1) % len(m.containers)
@@ -259,7 +259,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.servers) > 0 && m.selected < len(m.servers) && m.serverStates[m.selected].status == "connected" {
 					m.disconnectServer(m.selected)
 				}
-			} else if len(m.containers) > 0 {
+			} else if m.view == viewLogs && len(m.containers) > 0 {
 				name := m.containers[m.selected]
 				m.disabled[name] = !m.disabled[name]
 			}

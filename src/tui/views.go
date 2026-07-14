@@ -46,8 +46,15 @@ func (m *Model) View() string {
 		mode = m.containers[m.selected]
 	}
 	head := fmt.Sprintf(" ctrwatch  %s  ", mode)
-	nav := "←→ views  ↑↓ sel  enter focus  s servers  d hide  esc unfocus  q quit"
-	if m.view == viewServers {
+	nav := "←→ views  ↑↓ select  enter focus  q quit"
+	switch {
+	case m.view == viewLogs && m.focused:
+		nav = "↑↓ select  esc unfocus  q quit"
+	case m.view == viewLogs && m.logSelectorOpen:
+		nav = "↑↓ select  d toggle  enter focus  m/esc back  q quit"
+	case m.view == viewLogs:
+		nav = "←→ views  ↑↓ select  enter focus  m selector  d hide  q quit"
+	case m.view == viewServers:
 		nav = "←→ views  ↑↓ sel  enter connect  d disconnect  e edit  q quit"
 		if len(m.servers) == 0 {
 			nav = "e add server  ←→ views  q quit"
@@ -98,6 +105,10 @@ func (m *Model) viewPS(bodyHeight, panelW int) string {
 	}
 	selName := m.containers[m.selected]
 	top, bottom := boxBorder(fmt.Sprintf(" PS: %s — %d/%d", selName, m.selected+1, len(m.containers)), innerW)
+	color := panelColors[viewPS]
+	bStyle := lipgloss.NewStyle().Foreground(color)
+	top, bottom = bStyle.Render(top), bStyle.Render(bottom)
+	vl := bStyle.Render("│")
 	style := lipgloss.NewStyle().Width(innerW)
 	infoByClientName := map[*runtime.Client]map[string]runtime.Container{}
 	infoByName := map[string]runtime.Container{}
@@ -118,7 +129,7 @@ func (m *Model) viewPS(bodyHeight, panelW int) string {
 	}
 
 	body := make([]string, 0, bodyHeight)
-	body = append(body, "│"+style.Render(truncate(psRow("    ", "RT", "NAME", "ID", "IMAGE", "STATE", "STATUS"), innerW))+"│")
+	body = append(body, vl+style.Render(truncate(psRow("    ", "RT", "NAME", "ID", "IMAGE", "STATE", "STATUS"), innerW))+vl)
 
 	start, end := visibleRange(len(m.containers), max(bodyHeight-3, 1), m.selected)
 	for i := start; i < end; i++ {
@@ -140,10 +151,10 @@ func (m *Model) viewPS(bodyHeight, panelW int) string {
 		if key == selName {
 			marker = "●   "
 		}
-		body = append(body, "│"+style.Render(truncate(psRow(marker, m.containerRuntime(i), cn, id, c.Image, c.State, c.Status), innerW))+"│")
+		body = append(body, vl+style.Render(truncate(psRow(marker, m.containerRuntime(i), cn, id, c.Image, c.State, c.Status), innerW))+vl)
 	}
 
-	body = padBody(body, innerW, bodyHeight)
+	body = padBody(body, innerW, bodyHeight, vl)
 	body = append([]string{top}, body...)
 	body = append(body, bottom)
 	return strings.Join(body, "\n")
@@ -193,6 +204,9 @@ func shortenPath(p string) string {
 
 func (m *Model) viewStats(bodyHeight, panelW int) string {
 	innerW := max(panelW-2, 1)
+	color := panelColors[viewStats]
+	bStyle := lipgloss.NewStyle().Foreground(color)
+	vl := bStyle.Render("│")
 
 	if m.focused {
 		name := m.containers[m.selected]
@@ -202,66 +216,67 @@ func (m *Model) viewStats(bodyHeight, panelW int) string {
 			title = fmt.Sprintf("%s — %s", name, s.Uptime)
 		}
 		top, bottom := boxBorder(" Detail: "+title, innerW)
+		top, bottom = bStyle.Render(top), bStyle.Render(bottom)
 		style := lipgloss.NewStyle().Width(innerW)
 		body := make([]string, 0, bodyHeight)
 
 		detail := m.inspect
 		if detail != nil {
-			body = append(body, "│"+style.Render(lipgloss.NewStyle().Bold(true).Render("Overview"))+"│")
-			body = append(body, "│"+style.Render(fmt.Sprintf("  ID:       %s", runtime.ShortID(detail.ID)))+"│")
-			body = append(body, "│"+style.Render(fmt.Sprintf("  Image:    %s", detail.Config.Image))+"│")
-			body = append(body, "│"+style.Render(fmt.Sprintf("  Status:   %s", detail.State.Status))+"│")
+			body = append(body, vl+style.Render(lipgloss.NewStyle().Bold(true).Render("Overview"))+vl)
+			body = append(body, vl+style.Render(fmt.Sprintf("  ID:       %s", runtime.ShortID(detail.ID)))+vl)
+			body = append(body, vl+style.Render(fmt.Sprintf("  Image:    %s", detail.Config.Image))+vl)
+			body = append(body, vl+style.Render(fmt.Sprintf("  Status:   %s", detail.State.Status))+vl)
 			if !detail.Created.IsZero() {
-				body = append(body, "│"+style.Render(fmt.Sprintf("  Created:  %s", detail.Created.Format(time.RFC1123)))+"│")
+				body = append(body, vl+style.Render(fmt.Sprintf("  Created:  %s", detail.Created.Format(time.RFC1123)))+vl)
 			}
-			body = append(body, "│"+style.Render(fmt.Sprintf("  Restarts: %d", detail.RestartCount))+"│")
-			body = append(body, "│"+style.Render("")+"│")
+			body = append(body, vl+style.Render(fmt.Sprintf("  Restarts: %d", detail.RestartCount))+vl)
+			body = append(body, vl+style.Render("")+vl)
 
 			if len(detail.Mounts) > 0 {
-				body = append(body, "│"+style.Render(lipgloss.NewStyle().Bold(true).Render("Mounts"))+"│")
+				body = append(body, vl+style.Render(lipgloss.NewStyle().Bold(true).Render("Mounts"))+vl)
 				for _, mnt := range detail.Mounts {
 					rw := "ro"
 					if mnt.RW {
 						rw = "rw"
 					}
-					body = append(body, "│"+style.Render(fmt.Sprintf("  %s %s → %s (%s)", mnt.Type, shortenPath(mnt.Source), mnt.Destination, rw))+"│")
+					body = append(body, vl+style.Render(fmt.Sprintf("  %s %s → %s (%s)", mnt.Type, shortenPath(mnt.Source), mnt.Destination, rw))+vl)
 				}
-				body = append(body, "│"+style.Render("")+"│")
+				body = append(body, vl+style.Render("")+vl)
 			}
 
 			if len(detail.Config.Env) > 0 || len(detail.Config.Labels) > 0 {
-				body = append(body, "│"+style.Render(lipgloss.NewStyle().Bold(true).Render("Configuration"))+"│")
+				body = append(body, vl+style.Render(lipgloss.NewStyle().Bold(true).Render("Configuration"))+vl)
 				if len(detail.Config.Env) > 0 {
-					body = append(body, "│"+style.Render(fmt.Sprintf("  Env:     %d variables", len(detail.Config.Env)))+"│")
+					body = append(body, vl+style.Render(fmt.Sprintf("  Env:     %d variables", len(detail.Config.Env)))+vl)
 				}
 				if len(detail.Config.Labels) > 0 {
-					body = append(body, "│"+style.Render(fmt.Sprintf("  Labels:  %d", len(detail.Config.Labels)))+"│")
+					body = append(body, vl+style.Render(fmt.Sprintf("  Labels:  %d", len(detail.Config.Labels)))+vl)
 				}
-				body = append(body, "│"+style.Render("")+"│")
+				body = append(body, vl+style.Render("")+vl)
 			}
 
 			if len(detail.NetworkSettings.Ports) > 0 {
-				body = append(body, "│"+style.Render(lipgloss.NewStyle().Bold(true).Render("Ports"))+"│")
+				body = append(body, vl+style.Render(lipgloss.NewStyle().Bold(true).Render("Ports"))+vl)
 				for proto, bindings := range detail.NetworkSettings.Ports {
 					for _, b := range bindings {
-						body = append(body, "│"+style.Render(fmt.Sprintf("  %s:%s → %s", b.HostIP, b.HostPort, proto))+"│")
+						body = append(body, vl+style.Render(fmt.Sprintf("  %s:%s → %s", b.HostIP, b.HostPort, proto))+vl)
 					}
 				}
-				body = append(body, "│"+style.Render("")+"│")
+				body = append(body, vl+style.Render("")+vl)
 			}
 		}
 
 		changes := m.diff
 		if len(changes) > 0 {
-			body = append(body, "│"+style.Render(lipgloss.NewStyle().Bold(true).Render("Filesystem Changes"))+"│")
+			body = append(body, vl+style.Render(lipgloss.NewStyle().Bold(true).Render("Filesystem Changes"))+vl)
 			for _, ch := range changes {
 				k := changeKinds[ch.Kind]
 				if k == "" {
 					k = "?"
 				}
-				body = append(body, "│"+style.Render(fmt.Sprintf("  %s  %s", k, ch.Path))+"│")
+				body = append(body, vl+style.Render(fmt.Sprintf("  %s  %s", k, ch.Path))+vl)
 			}
-			body = append(body, "│"+style.Render("")+"│")
+			body = append(body, vl+style.Render("")+vl)
 		}
 
 		proc := m.top
@@ -286,41 +301,38 @@ func (m *Model) viewStats(bodyHeight, panelW int) string {
 				}
 				return strings.Join(parts, "")
 			}
-			body = append(body, "│"+style.Render(lipgloss.NewStyle().Bold(true).Render("Processes"))+"│")
+			body = append(body, vl+style.Render(lipgloss.NewStyle().Bold(true).Render("Processes"))+vl)
 			total := 0
 			for _, w := range colWidths {
 				total += w
 			}
-			body = append(body, "│"+style.Render(formatRow(proc.Titles))+"│")
-			body = append(body, "│"+style.Render(strings.Repeat("─", min(innerW, total)))+"│")
+			body = append(body, vl+style.Render(formatRow(proc.Titles))+vl)
+			body = append(body, vl+style.Render(strings.Repeat("─", min(innerW, total)))+vl)
 			for _, p := range proc.Processes {
-				body = append(body, "│"+style.Render(formatRow(p))+"│")
+				body = append(body, vl+style.Render(formatRow(p))+vl)
 			}
-			body = append(body, "│"+style.Render("")+"│")
+			body = append(body, vl+style.Render("")+vl)
 		}
 
-		body = padBody(body, innerW, bodyHeight)
+		body = padBody(body, innerW, bodyHeight, vl)
 		body = append([]string{top}, body...)
 		body = append(body, bottom)
 		return strings.Join(body, "\n")
 	}
 
 	top, bottom := boxBorder(fmt.Sprintf(" Stats: %d container(s)", len(m.containers)), innerW)
-
+	top, bottom = bStyle.Render(top), bStyle.Render(bottom)
 	selName := ""
 	if m.selected < len(m.containers) {
 		selName = m.containers[m.selected]
 	}
 	style := lipgloss.NewStyle().Width(innerW)
 	body := []string{
-		"│" + style.Render(truncate(fmt.Sprintf("    %-8s %-22s %6s %6s %-16s %-20s %-10s %5s %10s %10s", "RT", "NAME", "CPU", "MEM%", "MEM", "STATUS", "UPTIME", "PIDS", "NET", "BLK"), innerW)) + "│",
+		vl + style.Render(truncate(fmt.Sprintf("    %-8s %-22s %6s %6s %-16s %-20s %-10s %5s %10s %10s", "RT", "NAME", "CPU", "MEM%", "MEM", "STATUS", "UPTIME", "PIDS", "NET", "BLK"), innerW)) + vl,
 	}
 	start, end := visibleRange(len(m.containers), max(bodyHeight-3, 1), m.selected)
 	for i := start; i < end; i++ {
 		name := m.containers[i]
-		if m.focused && name != selName {
-			continue
-		}
 		s := m.stats[name]
 		marker := "    "
 		if name == selName {
@@ -330,7 +342,7 @@ func (m *Model) viewStats(bodyHeight, panelW int) string {
 		runtimeName := m.containerRuntime(i)
 		if s == nil {
 			row := fmt.Sprintf("%-8s %-22s %5s %5s %-16s %-20s %-10s %5s %10s %10s", runtimeName, truncate(rawName, 22), "-", "-", "-", "-", "-", "-", "-", "-")
-			body = append(body, "│"+style.Render(truncate(marker+row, innerW))+"│")
+			body = append(body, vl+style.Render(truncate(marker+row, innerW))+vl)
 			continue
 		}
 		memMB := float64(s.MemoryUsage) / 1024 / 1024
@@ -357,9 +369,9 @@ func (m *Model) viewStats(bodyHeight, panelW int) string {
 			blk = "-"
 		}
 		row := fmt.Sprintf("%-8s %-22s %5.1f%% %6s %-16s %-20s %-10s %5s %10s %10s", runtimeName, truncate(rawName, 22), s.CPUPercent, memPct, memStr, s.Status, uptime, pids, net, blk)
-		body = append(body, "│"+style.Render(truncate(marker+row, innerW))+"│")
+		body = append(body, vl+style.Render(truncate(marker+row, innerW))+vl)
 	}
-	body = padBody(body, innerW, bodyHeight)
+	body = padBody(body, innerW, bodyHeight, vl)
 	body = append([]string{top}, body...)
 	body = append(body, bottom)
 	return strings.Join(body, "\n")

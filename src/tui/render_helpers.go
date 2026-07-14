@@ -33,7 +33,12 @@ func takeWidth(s string, width int) string {
 }
 
 func cleanLine(s string) string {
+	// fast path: most log lines have no ANSI or control chars
+	if !strings.ContainsAny(s, "\x1b\r\n\t") {
+		return s
+	}
 	var b strings.Builder
+	b.Grow(len(s))
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c == '\x1b' {
@@ -116,10 +121,10 @@ func boxBorder(title string, innerW int) (top, bottom string) {
 	return
 }
 
-func padBody(body []string, innerW, bodyHeight int) []string {
+func padBody(body []string, innerW, bodyHeight int, vl string) []string {
 	contentHeight := max(bodyHeight-2, 1)
 	for len(body) < contentHeight {
-		body = append(body, "│"+strings.Repeat(" ", innerW)+"│")
+		body = append(body, vl+strings.Repeat(" ", innerW)+vl)
 	}
 	if len(body) > contentHeight {
 		body = body[:contentHeight]

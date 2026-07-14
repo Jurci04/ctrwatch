@@ -20,61 +20,64 @@ func (m *Model) viewServers(bodyHeight, panelW int) string {
 			Render("no servers configured — press e to add one")
 	}
 
-	lines := make([]string, 0, bodyHeight)
-	lines = append(lines, fmt.Sprintf("%-3s %-20s %-28s %-8s %s", "#", "HOST", "SOCKET", "STATUS", "CONTAINERS"))
-	lines = append(lines, strings.Repeat("─", innerW))
+	color := panelColors[viewServers]
+	bStyle := lipgloss.NewStyle().Foreground(color)
+	vl := bStyle.Render("│")
+	hl := bStyle.Render(strings.Repeat("─", innerW))
+	top, bottom := boxBorder(" Servers ", innerW)
+	top, bottom = bStyle.Render(top), bStyle.Render(bottom)
+	body := make([]string, 0, bodyHeight)
+	body = append(body, vl+lipgloss.NewStyle().Width(innerW).Render(
+		fmt.Sprintf("%-3s %-20s %-28s %-6s %s", "#", "HOST", "SOCKET", "STATUS", "CONTAINERS"))+vl)
+	body = append(body, vl+lipgloss.NewStyle().Width(innerW).Render(hl)+vl)
 
 	for i, s := range m.servers {
 		host := s.Host
 		if host == "" {
 			host = "localhost"
 		}
-		status := "○"
+		st := "○"
 		serverState := m.serverStates[i].status
 		if len(m.serverStates[i].sessions) > 0 && m.serverStates[i].sessions[0] != nil {
 			serverState = m.serverStates[i].sessions[0].State()
 		}
 		switch serverState {
 		case "connected":
-			status = "●"
+			st = "●"
 		case "connecting":
-			status = "⋯"
+			st = "⋯"
 		case "reconnecting":
-			status = "↻"
+			st = "↻"
 		case "error":
-			status = "✕"
+			st = "✕"
 		case "failed":
-			status = "!"
+			st = "!"
 		}
 		sock := truncate(s.Socket, 28)
 		containers := strings.Join(s.Containers, ", ")
-		row := fmt.Sprintf("%-3d %-20s %-28s  %-6s %s", i+1, host, sock, status, containers)
+		marker := "  "
 		if i == m.selected {
-			row = "● " + row[2:]
+			marker = "● "
 		}
-		lines = append(lines, truncate(row, innerW))
-	}
-	lines = append(lines, "")
-	lines = append(lines, lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("8")).
-		Render("enter to connect"))
-	if m.selected < len(m.serverStates) && m.serverStates[m.selected].err != "" {
-		lines = append(lines, "")
-		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("9")).
-			Render(truncate("last error: "+m.serverStates[m.selected].err, innerW)))
+		row := fmt.Sprintf("%s%-3d %-20s %-28s  %-6s %s", marker, i+1, host, sock, st, containers)
+		body = append(body, vl+lipgloss.NewStyle().Width(innerW).Render(truncate(row, innerW))+vl)
 	}
 
-	for len(lines) < bodyHeight {
-		lines = append(lines, "")
+	if m.selected < len(m.serverStates) && m.serverStates[m.selected].err != "" {
+		body = append(body, vl+lipgloss.NewStyle().Width(innerW).Foreground(lipgloss.Color("9")).
+			Render(truncate("last error: "+m.serverStates[m.selected].err, innerW))+vl)
 	}
-	if len(lines) > bodyHeight {
-		lines = lines[:bodyHeight]
-	}
-	return strings.Join(lines, "\n")
+
+	body = padBody(body, innerW, bodyHeight, vl)
+	body = append([]string{top}, body...)
+	body = append(body, bottom)
+	return strings.Join(body, "\n")
 }
 
 func (m *Model) viewConfigSetup(bodyHeight, innerW int) string {
 	labels := []string{"Host", "Socket", "Containers", "Tags"}
 	lines := make([]string, 0, bodyHeight)
+	lineStyle := lipgloss.NewStyle().Foreground(panelColors[viewServers])
 	var title string
 	if m.setupEditIdx >= 0 {
 		s := m.servers[m.setupEditIdx]
@@ -87,7 +90,7 @@ func (m *Model) viewConfigSetup(bodyHeight, innerW int) string {
 		title = lipgloss.NewStyle().Bold(true).Render("＋ Add server")
 	}
 	lines = append(lines, title)
-	lines = append(lines, strings.Repeat("─", innerW))
+	lines = append(lines, lineStyle.Render(strings.Repeat("─", innerW)))
 	for i, label := range labels {
 		marker := "  "
 		if i == m.setupField {

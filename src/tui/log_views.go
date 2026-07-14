@@ -69,38 +69,24 @@ func (m *Model) viewLogFocused(bodyHeight, panelW int) string {
 }
 
 func (m *Model) viewLogPanels(bodyHeight, panelW int) string {
-	containers := m.containers
-	activeCount := len(containers)
-	hiddenCount := 0
-	if len(m.disabled) > 0 {
-		var active, hidden []string
-		for _, name := range containers {
-			if m.disabled[name] {
-				hidden = append(hidden, name)
-			} else {
-				active = append(active, name)
-			}
+	active := make([]string, 0, len(m.containers))
+	for _, name := range m.containers {
+		if !m.disabled[name] {
+			active = append(active, name)
 		}
-		hiddenCount = len(hidden)
-		activeCount = len(active)
-		containers = append(active, hidden...)
 	}
-	bodyRows := 0
-	if activeCount > 0 {
-		bodyRows = max((bodyHeight-hiddenCount)/activeCount-2, 0)
-	}
-	if activeCount == 0 {
+	if len(active) == 0 {
 		return lipgloss.NewStyle().Width(max(panelW-2, 1)).Render("all hidden — press d to show")
 	}
 	innerW := max(panelW-2, 1)
+	bodyRows := max(bodyHeight/len(active)-2, 0)
 
 	var panels []string
-	for i, name := range containers {
+	for i, name := range active {
 		idx := m.indexOfContainer(name)
 		contentHeight := bodyRows
 		color := panelColors[i%len(panelColors)]
 		selected := name == m.containers[m.selected]
-		hidden := m.disabled[name]
 		bStyle := lipgloss.NewStyle().Foreground(color).Bold(selected)
 		vl := bStyle.Render("│")
 
@@ -115,15 +101,7 @@ func (m *Model) viewLogPanels(bodyHeight, panelW int) string {
 		}
 		title = truncate(title+" ", max(innerW-2, 1))
 		dashes := max(0, innerW-1-lipgloss.Width(title))
-		if hidden {
-			title = "[hidden] " + title
-		}
 		topBorder := bStyle.Render("╭" + "─" + title + strings.Repeat("─", dashes) + "╮")
-
-		if hidden {
-			panels = append(panels, topBorder)
-			continue
-		}
 
 		body := make([]string, 0, contentHeight)
 		buf := m.lines[name]
@@ -158,7 +136,8 @@ func (m *Model) viewLogPanels(bodyHeight, panelW int) string {
 func (m *Model) viewLogSelector(bodyHeight, panelW int) string {
 	innerW := max(panelW-2, 1)
 	n := len(m.containers)
-	cap := max(bodyHeight-2, 1)
+	contentHeight := max(bodyHeight-1, 0)
+	cap := max(contentHeight-2, 1)
 	start, end := visibleRange(n, cap, m.selected)
 	lines := make([]string, 0, end-start+2)
 	lines = append(lines, " Containers (select which to show)")
@@ -184,17 +163,16 @@ func (m *Model) viewLogSelector(bodyHeight, panelW int) string {
 		}
 		lines = append(lines, sty.Render(fmt.Sprintf("%s[%s] %s (%s)", marker, check, cn, rt)))
 	}
-	for len(lines) < bodyHeight {
+	if len(lines) > contentHeight {
+		lines = lines[:contentHeight]
+	}
+	for len(lines) < contentHeight {
 		lines = append(lines, "")
 	}
-	if len(lines) > bodyHeight {
-		lines = lines[:bodyHeight]
-	}
-	lines = append(lines, "")
-	lines = append(lines, lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("8")).
-		Render("d toggle · enter focus · esc back"))
-	if len(lines) > bodyHeight {
-		lines = lines[:bodyHeight]
+	if bodyHeight > 0 {
+		help := lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("8")).
+			Render(truncate("d toggle · enter focus · m/esc back", innerW))
+		lines = append(lines, help)
 	}
 	return strings.Join(lines, "\n")
 }

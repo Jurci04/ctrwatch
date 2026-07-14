@@ -1,147 +1,113 @@
 # ctrwatch Feature Roadmap
 
-## Summary
+## Direction
 
-`ctrwatch` is an agentless, read-only container cockpit for people who watch
-containers across local and SSH-reachable servers. It should stay safe to run
-against production hosts: no server-side agent, no lifecycle actions by
-default, and no required database.
+`ctrwatch` is an agentless, read-only container cockpit for local and
+SSH-reachable Docker-compatible runtimes. It should remain safe for production
+triage: no remote agent, lifecycle actions, required database, or duplicated
+credential system.
 
-The TUI is the default entrypoint for interactive triage. Direct CLI commands
-stay available for scripting.
+The TUI stays the default interactive entrypoint. Direct CLI commands remain
+available for scripts.
 
-## Positioning
+## Shipped
 
-- **Agentless remote access**: use the existing Docker/Podman socket through
-  local access or system `ssh`; do not require a daemon on the remote host.
-- **Read-only by default**: prioritize production-safe inspection over
-  container management.
-- **Multi-server triage**: make it obvious which server or container needs
-  attention before the user drills into logs, stats, inspect, diff, or top.
-- **Small tool, boring setup**: config should be easy to create, easy to read,
-  and compatible with normal SSH config aliases, keys, agents, and jump hosts.
-
-## Completed
-
-- Server state tracking: each server shows `local`, `connected`, `connecting`,
-  `reconnecting`, or `failed`. — **done**
-- Surface last SSH/runtime error in the servers view. — **done**
-- SSH tunnel supervisor with probe, reconnect, and bounded exponential backoff
-  (inlined, no dependency). — **done**
-- CLI `config init` multi-server loop and TUI setup wizard (`e` key). — **done**
-- Setup wizard textinput widget integration (cursor, scroll, placeholder,
-  focus/blur). — **done**
-- Setup form field navigation via `tab`/`shift+tab`, `enter` to save. — **done**
-- SSH alias cycling (`ctrl+a`) and container discovery (`ctrl+p`) in setup. — **done**
-- Socket detection hints only for localhost. — **done**
-- Log container selector (`m` key): checkbox list with `[x]`/`[ ]` to choose
-  which containers appear in the split-screen panels. — **done**
-- Binary: 7.6MB static, stripped, CGO_ENABLED=0, -trimpath. — **done**
-- Build dependencies removed: `backoff/v7`, `gopkg.in/check.v1`. — **done**
-- Ponytail audit cleanup: -15 lines (duplicate socketPath, dead line,
-  single-caller helpers). — **done**
+- Docker-compatible local, TCP, and SSH runtime access, including Podman
+  sockets and multiple configured sources.
+- Read-only logs, container lists, stats, inspect metadata, filesystem changes,
+  and running processes.
+- SSH tunnel supervision with reconnect state and error reporting.
+- CLI config/import workflows and an in-TUI server setup editor with SSH alias
+  and container discovery.
+- Log panel selection, runtime labels, configurable stats polling, and a small
+  dependency-free E2E harness.
 
 ## Next
 
 Ranked by expected value-to-effort ratio.
 
-### 1. Stale Data Label While Reconnecting
+### 1. Reconnect State And Stale Data
 
-Keep stale container data visible while reconnecting, clearly marked
-stale. — **still needed** (`TODO(tui)` in `model.go` and
-`runtime_commands.go`)
+Feed live session state and errors into the model continuously. Keep the last
+container data visible during reconnects and label it stale instead of clearing
+it on a transient failure.
 
-Effort: small (stale data labeling in view, one docs section).
+Tests: reconnecting, failed, recovered, and stale rendering states.
 
-### 2. Container Name/ID Filter Across All Views
+### 2. Dynamic Container Polling
 
-Type `/` in the TUI to filter the container list by name or ID substring.
-Filter applies across all views — only matching containers appear in PS,
-stats, diff, etc. Makes the tool usable with dozens of containers.
+Start and maintain stats polling when containers are added after TUI startup,
+including the common case where startup has no local containers and a remote
+server is connected later.
 
-Effort: medium (input mode, incremental filter, clear on esc).
-Tests: model update tests for filter state.
+Tests: connect the first server after startup and receive stats without
+restarting the TUI.
 
-### 3. Health And Problem Summary
+### 3. Unique Container Source Identity
 
-Show problems before details.
+Key internal log, stats, selection, and cancellation state by source plus
+container identity. Containers with the same runtime and name on different
+servers must not share state.
 
-- Parse container health status from inspect data.
-- Highlight unhealthy, restarting, exited, and stale containers in PS/stats.
-- Add a compact summary line or panel, e.g. `prod-api: 2 unhealthy, 1
-  restarting; homebox: reconnecting`.
-- Keep detailed logs/inspect/stats one keypress away.
+Tests: two servers exposing the same container name remain independent.
 
-Effort: small to medium (status extraction and summary rendering).
-Tests: mock inspect/status data for unhealthy/restarting/stale cases.
+### 4. Podman Confidence Pass
 
-### 4. Event Stream View
+Run the real integration suite against rootless and system Podman sockets,
+mixed Docker/Podman config, and remote Podman over SSH. Record supported paths
+and fix only failures reproduced by the run.
 
-Effort: medium (new runtime method + streaming view).
-Tests: mock server emits timed events.
+Command: `CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh --runtime podman`.
 
-### 5. CLI `config add <host>` Shortcut
+### 5. Container Filter
 
-`ctrwatch config add <host> [--socket <path>] [--tag <tag>]` — CLI-only
-shortcut to add a server without the interactive init wizard.
+Use `/` to filter containers by name or ID across Logs, PS, and Stats. `esc`
+clears the filter before changing focus.
 
-Effort: small.
+Tests: incremental filtering, no matches, selection clamping, and clear.
 
-### 6. Podman Manual Confidence Pass
+### 6. Health And Problem Summary
 
-Run and record a real Podman session before adding Podman connection discovery.
+Surface unhealthy, restarting, exited, reconnecting, and stale resources before
+details. Add a compact summary and consistent highlighting while keeping every
+detail one keypress away.
 
-- Verify rootless socket: `/run/user/$UID/podman/podman.sock`.
-- Verify system socket when available: `/run/podman/podman.sock`.
-- Verify configured Podman sockets, direct CLI commands, and default TUI.
-- Verify a config with Docker and Podman sockets at the same time.
-- Verify remote Podman over SSH with a configured `socket` path.
+Tests: unhealthy, restarting, exited, reconnecting, and stale cases.
 
-Effort: small (manual runbook and fixes for anything found).
-Tests: `CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh --runtime podman`.
+### 7. Runtime Events
 
-### 7. Table column sorting in PS view
+Add a read-only event stream only after the problem summary is useful; events
+should explain state changes rather than become another general-purpose view.
 
-Click or key-triggered sort by name, status, CPU, memory, etc. in the TUI
-PS view.
+Tests: mock timed lifecycle and health events.
 
-Effort: medium (sort state, key bindings).
-Tests: sort order unit tests.
+## Later Runtime Sources
 
-## Future Access And Runtime Sources
+Add sources only when they reuse existing credentials and preserve the
+agentless, read-only model.
 
-Add new sources only when they preserve the core shape: no agent, read-only by
-default, and reuse credentials/config the user already has.
+1. Docker contexts, including existing SSH endpoints.
+2. Podman connections and common `podman machine` sockets.
+3. Explicit Docker TCP/TLS certificate configuration when demand justifies it.
 
-Priority order:
+Kubernetes contexts are deferred: kubeconfig, pod/container modeling, and API
+behavior would materially expand the tool beyond Docker-compatible runtimes.
 
-1. **Docker contexts**: discover or accept Docker contexts so users can reuse
-   existing SSH/TCP/TLS Docker endpoints.
-2. **Kubernetes contexts**: read pods, logs, status, restart counts, and events
-   through kubeconfig-compatible auth. Keep this as pod/container triage, not a
-   full Kubernetes dashboard.
-3. **Podman connections / podman machine**: Podman is already supported through
-   Docker-compatible sockets; add discovery for configured Podman connections
-   and common `podman machine` sockets.
-4. **Docker TCP/TLS endpoints**: extend existing TCP support with explicit TLS
-   certificate config only when there is real demand.
+Table sorting is also deferred until filtering proves insufficient. A separate
+`config add` command is not planned because `config init` and the TUI editor
+already cover that workflow.
 
-## Not planned
+## Not Planned
 
-- **Lifecycle management** (`start`, `stop`, `restart`, `compose up/down`).
-  Docker Compose and `docker` CLI already do this. ctrwatch stays read-only
-  unless explicit user demand proves a narrow, opt-in action mode is worth the
-  extra risk.
-- **Direct cloud-provider integrations** (AWS/Azure/GCP APIs). Prefer Docker
-  contexts, kubeconfig, or existing runtime sockets over cloud-specific SDKs.
-- **Non-container monitoring** (tmux sessions, cron jobs, systemd units).
-  Out of scope. Use dedicated tools for those domains.
-- **Configurable refresh intervals**. Hard-coded 10s is fine; YAGNI until
-  someone asks.
+- Container lifecycle or Compose orchestration; use the runtime and Compose
+  CLIs for start, stop, restart, and deployment actions.
+- Cloud-provider SDK integrations; prefer contexts, kubeconfig-aware dedicated
+  tools, or runtime sockets.
+- Non-container monitoring such as systemd, cron, or tmux.
 
 ## Acceptance Criteria
 
-- `go test ./...` passes.
-- `./test/e2e/run.sh` passes (zero runtime dependencies).
-- `CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh` passes with Docker or Podman.
-- Normal tests do not require Docker, Podman, SSH, or a real terminal.
+- `go test ./...` and `go vet ./...` pass.
+- `./test/e2e/run.sh` passes without Docker, Podman, SSH, or a real terminal.
+- `CTRWATCH_INTEGRATION=1 ./test/e2e/run-real.sh` passes when a supported real
+  runtime is available.
