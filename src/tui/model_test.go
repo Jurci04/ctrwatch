@@ -109,6 +109,68 @@ func TestLogSelectorControlsVisiblePanels(t *testing.T) {
 	}
 }
 
+func TestLogPanelsAllHiddenMessage(t *testing.T) {
+	m := testModel([]string{"api", "worker"})
+	m.width = 80
+	m.height = 16
+	m.disabled[m.containers[0]] = true
+	m.disabled[m.containers[1]] = true
+
+	if got := m.viewLogPanels(12, 78); !strings.Contains(got, "all hidden") {
+		t.Fatalf("panels missing hidden-state message:\n%s", got)
+	}
+}
+
+func TestLogSelectorNavigationDiffersFromPanels(t *testing.T) {
+	m := testModel([]string{"api", "worker", "db"})
+	m.width = 80
+	m.height = 16
+	m.disabled[m.containers[1]] = true
+
+	m.selected = 0
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.selected != 2 {
+		t.Fatalf("panel navigation selected %d, want 2", m.selected)
+	}
+
+	m.selected = 0
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.selected != 1 {
+		t.Fatalf("selector navigation selected %d, want 1", m.selected)
+	}
+}
+
+func TestServersViewShowsStatusAndError(t *testing.T) {
+	m := testModel([]string{"api", "worker"})
+	m.view = viewServers
+	m.width = 80
+	m.height = 20
+	m.selected = 1
+	m.servers = []config.Server{
+		{Host: "prod", Socket: "/var/run/docker.sock", Containers: []string{"api"}},
+		{Host: "", Socket: "/run/user/1000/podman/podman.sock", Containers: []string{"worker"}},
+	}
+	m.serverStates = []serverState{
+		{status: "connected"},
+		{status: "reconnecting", err: "ssh timeout"},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "prod") || !strings.Contains(view, "/var/run/docker.sock") {
+		t.Fatalf("servers view missing first server:\n%s", view)
+	}
+	if !strings.Contains(view, "localhost") || !strings.Contains(view, "/run/user/1000/podman") {
+		t.Fatalf("servers view missing second server:\n%s", view)
+	}
+	if !strings.Contains(view, "↻") {
+		t.Fatalf("servers view missing reconnecting state:\n%s", view)
+	}
+	if !strings.Contains(view, "last error: ssh timeout") {
+		t.Fatalf("servers view missing last error:\n%s", view)
+	}
+}
+
 func TestViewSwitching(t *testing.T) {
 	m := testModel([]string{"api", "worker"})
 	if m.view != viewLogs {
@@ -371,7 +433,7 @@ func TestServerViewCanCreateConfig(t *testing.T) {
 		{Type: tea.KeyCtrlU},
 		{Type: tea.KeyRunes, Runes: []rune("prod-api")},
 		{Type: tea.KeyTab},
-		{Type: tea.KeyRunes, Runes: []rune("/run/podman/podman.sock")},
+		{Type: tea.KeyRunes, Runes: []rune("/run/user/1000/podman/podman.sock")},
 		{Type: tea.KeyTab},
 		{Type: tea.KeyRunes, Runes: []rune("api, worker")},
 		{Type: tea.KeyTab},
@@ -389,7 +451,7 @@ func TestServerViewCanCreateConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := cfg.Servers[0]
-	if got.Host != "prod-api" || got.Socket != "/run/podman/podman.sock" {
+	if got.Host != "prod-api" || got.Socket != "/run/user/1000/podman/podman.sock" {
 		t.Fatalf("server = %+v", got)
 	}
 	if !strings.Contains(m.View(), "prod-api") {

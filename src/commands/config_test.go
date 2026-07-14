@@ -11,7 +11,7 @@ import (
 
 func TestRunConfigInitCreatesConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ctrwatch.yaml")
-	input := strings.NewReader("n\nprod-api\n/run/podman/podman.sock\napi, worker\ndev, prod\nn\n")
+	input := strings.NewReader("n\nprod-api\n/run/user/1000/podman/podman.sock\napi, worker\ndev, prod\nn\n")
 	var output strings.Builder
 
 	if err := runConfigInit([]string{"--output", path}, input, &output); err != nil {
@@ -23,7 +23,7 @@ func TestRunConfigInitCreatesConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := cfg.Servers[0]
-	if got.Host != "prod-api" || got.Socket != "/run/podman/podman.sock" {
+	if got.Host != "prod-api" || got.Socket != "/run/user/1000/podman/podman.sock" {
 		t.Fatalf("server = %+v", got)
 	}
 	if !slices.Equal(got.Containers, []string{"api", "worker"}) {
